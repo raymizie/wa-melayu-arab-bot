@@ -35,6 +35,7 @@ export function getUserPrefs(jid) {
     voice: saved.voice || config.defaultVoice,
     rate: saved.rate || config.defaultRate,
     sttLang: saved.sttLang || config.defaultSttLang,
+    groupAuto: typeof saved.groupAuto === 'boolean' ? saved.groupAuto : config.groupAutoReply,
   };
 }
 

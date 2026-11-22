@@ -58,9 +58,10 @@ async function startBot() {
 
     if (connection === 'open') {
       const phone = sock.user?.id?.split(':')[0] || null;
+      const lid = sock.user?.lid?.split(':')[0] || null;
       setConnectionStatus('connected', phone);
       console.log('\n==================================================');
-      console.log(`✅ BOT WHATSAPP TERSAMBUNG! (${phone || 'Aktif'})`);
+      console.log(`✅ BOT WHATSAPP TERSAMBUNG! (ID: ${phone || 'Aktif'}, LID: ${lid || '-'})`);
       console.log('• Hantar teks Melayu -> dapat teks & Voice Note Arab');
       console.log('• Hantar Voice Note / fail audio Arab -> dapat teks Melayu');
       console.log('• Hantar /menu untuk senarai arahan & pilihan suara');

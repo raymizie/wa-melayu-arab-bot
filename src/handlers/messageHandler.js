@@ -16,18 +16,32 @@ import {
 import { textToArabicVoiceNote } from '../services/tts.js';
 import { transcribeArabicAudio } from '../services/stt.js';
 
-// Track message IDs sent by this bot so it never replies to itself in an infinite loop
+// Track message IDs and recent outgoing texts sent by this bot (race-free anti-loop)
 const botSentIds = new Map();
+const botSentTexts = new Map();
+
+function pruneMap(map, maxAgeMs = 10 * 60 * 1000) {
+  const cutoff = Date.now() - maxAgeMs;
+  for (const [k, ts] of map.entries()) {
+    if (ts < cutoff) map.delete(k);
+  }
+}
 
 function rememberBotMessage(sentMsg) {
   const id = sentMsg?.key?.id;
   if (!id) return;
   botSentIds.set(id, Date.now());
-  // Prune entries older than 10 minutes
-  const cutoff = Date.now() - 10 * 60 * 1000;
-  for (const [k, ts] of botSentIds.entries()) {
-    if (ts < cutoff) botSentIds.delete(k);
-  }
+  pruneMap(botSentIds);
+}
+
+function rememberBotText(text) {
+  if (!text) return;
+  botSentTexts.set(text.trim(), Date.now());
+  pruneMap(botSentTexts, 2 * 60 * 1000);
+}
+
+function isBaileysGeneratedId(id) {
+  return typeof id === 'string' && (id.startsWith('BAE5') || id.startsWith('3EB0'));
 }
 
 function unwrapMessage(message) {
@@ -119,7 +133,14 @@ function getQuotedAudioMessage(msg, content) {
   };
 }
 
-function buildMenuText(prefs) {
+function getQuotedText(content) {
+  const ctx = content?.extendedTextMessage?.contextInfo;
+  if (!ctx?.quotedMessage) return '';
+  const quotedContent = unwrapMessage(ctx.quotedMessage);
+  return extractText(quotedContent);
+}
+
+function buildMenuText(prefs, isGroup = false) {
   const voiceObj = ARABIC_VOICES.find((v) => v.id === prefs.voice);
   const voiceLabel = voiceObj ? voiceObj.label : prefs.voice;
 
@@ -128,25 +149,25 @@ function buildMenuText(prefs) {
     '',
     '📌 *Cara Penggunaan:*',
     '1️⃣ *Teks Melayu → Audio Arab*',
-    '   Hantar sahaja teks Bahasa Melayu (atau guna `/arab <teks>`).',
-    '   Bot akan balas teks Arab, sebutan Rumi & *Voice Note* Arab.',
+    '   Hantar teks Melayu (chat peribadi / grup auto) atau guna `/arab <teks>` (boleh juga *reply* `/arab` pada mesej).',
     '',
     '2️⃣ *Audio Arab → Teks Melayu*',
-    '   Rakam *Voice Note* suara Arab ATAU muat naik fail audio (MP3/WAV/M4A/OGG).',
-    '   Bot akan transkripsi teks Arab & terjemah ke Bahasa Melayu.',
-    '   _(Dalam grup: reply pada audio Arab dengan `/melayu`)_',
+    '   Hantar *Voice Note* atau fail audio Arab (MP3/WAV/M4A/OGG).',
+    '   _(Dalam grup mod arahan: reply `/melayu` pada audio/teks Arab)_',
     '',
     '⚙️ *Senarai Arahan:*',
     '• `/menu` — Papar panduan ini',
     '• `/arab <teks>` — Tukar teks Melayu ke audio Arab',
-    '• `/melayu <teks>` — Terjemah teks Arab ke Melayu',
-    '• `/suara` — Pilih suara & loghat Arab (Saudi/Mesir/UAE/Jordan)',
+    '• `/melayu <teks>` — Terjemah teks Arab / audio yang di-reply ke Melayu',
+    '• `/suara` — Pilih 8 suara & loghat Arab (Saudi/Mesir/UAE/Jordan)',
     '• `/laju <perlahan|biasa|laju>` — Laras kelajuan suara Arab',
+    '• `/auto on` / `/auto off` — Hidupkan/matikan auto-terjemah dalam grup ini',
     '',
-    `🎙️ *Tetapan Semasa Anda:*`,
+    `🎙️ *Tetapan Semasa:*`,
     `• Suara: ${voiceLabel}`,
     `• Kelajuan: ${prefs.rate}`,
     `• Loghat STT: ${prefs.sttLang}`,
+    ...(isGroup ? [`• Mod Auto Grup: ${prefs.groupAuto ? 'HIDUP ✅' : 'MATI (guna arahan)'}`] : []),
   ].join('\n');
 }
 
@@ -165,6 +186,7 @@ function buildVoiceListText(currentVoiceId) {
 }
 
 async function sendText(sock, jid, text, quoted) {
+  rememberBotText(text);
   const sent = await sock.sendMessage(jid, { text }, quoted ? { quoted } : undefined);
   rememberBotMessage(sent);
   return sent;
@@ -348,12 +370,37 @@ async function handleArabicAudioToMalay(sock, jid, msg, targetMediaMsg, audioInf
   }
 }
 
-function isSelfChat(sock, jid) {
-  const myId = sock.user?.id;
-  if (!myId || !jid) return false;
-  const myNumber = myId.split(':')[0].split('@')[0];
-  const chatNumber = jid.split(':')[0].split('@')[0];
-  return myNumber === chatNumber && jid.endsWith('@s.whatsapp.net');
+function stripDevice(jid) {
+  if (!jid || typeof jid !== 'string') return '';
+  return jid.split(':')[0].split('@')[0];
+}
+
+function isSelfChat(sock, msg) {
+  const jid = msg.key?.remoteJid || '';
+  const altJid = msg.key?.remoteJidAlt || '';
+  if (!jid || jid.endsWith('@g.us')) return false;
+
+  const myIds = new Set();
+  if (sock.user?.id) myIds.add(stripDevice(sock.user.id));
+  if (sock.user?.lid) myIds.add(stripDevice(sock.user.lid));
+
+  const targetIds = [stripDevice(jid), stripDevice(altJid)].filter(Boolean);
+
+  // Also check Baileys internal LID -> Phone Number mapping if available
+  if (jid.endsWith('@lid')) {
+    try {
+      const mappedPn = sock.signalRepository?.lidMapping?.getPNForLID?.(jid);
+      if (mappedPn) targetIds.push(stripDevice(mappedPn));
+    } catch {
+      // Ignore mapping lookup errors
+    }
+  }
+
+  for (const tid of targetIds) {
+    if (tid && myIds.has(tid)) return true;
+  }
+
+  return false;
 }
 
 export async function handleIncomingMessage(sock, msg) {
@@ -364,11 +411,7 @@ export async function handleIncomingMessage(sock, msg) {
 
   // Never respond to messages sent by this bot itself
   if (botSentIds.has(msg.key.id)) return;
-
-  const selfChat = isSelfChat(sock, jid);
-  if (msg.key.fromMe) {
-    if (!config.allowSelfChat || !selfChat) return;
-  }
+  if (msg.key.fromMe && isBaileysGeneratedId(msg.key.id)) return;
 
   const content = unwrapMessage(msg.message);
   if (!content) return;
@@ -378,19 +421,75 @@ export async function handleIncomingMessage(sock, msg) {
     return;
   }
 
+  const text = extractText(content);
+  if (msg.key.fromMe && text && botSentTexts.has(text)) return;
   const isGroup = jid.endsWith('@g.us');
   const prefs = getUserPrefs(jid);
-  const text = extractText(content);
   const audioInfo = getAudioInfo(content);
+  const isCommand = text.startsWith('/') || text.startsWith('!');
+  const selfChat = isSelfChat(sock, msg);
+
+  console.log(
+    `[MSG] jid=${jid} alt=${msg.key.remoteJidAlt || '-'} fromMe=${Boolean(msg.key.fromMe)} selfChat=${selfChat} group=${isGroup} auto=${prefs.groupAuto} type=${contentType} text="${text.slice(0, 40)}"`
+  );
+
+  if (msg.key.fromMe) {
+    // Allow self-chat ("Message Yourself"), explicit /commands, AND groups with /auto on
+    const allowedSelf = config.allowSelfChat && selfChat;
+    const allowedGroupAuto = isGroup && prefs.groupAuto;
+    if (!allowedSelf && !allowedGroupAuto && !isCommand) {
+      return;
+    }
+  }
 
   // 1. Handle Commands
-  if (text.startsWith('/') || text.startsWith('!')) {
+  if (isCommand) {
     const [rawCmd, ...rest] = text.slice(1).trim().split(/\s+/);
     const cmd = (rawCmd || '').toLowerCase();
     const arg = rest.join(' ').trim();
 
     if (cmd === 'menu' || cmd === 'help' || cmd === 'start' || cmd === 'bantuan') {
-      await sendText(sock, jid, buildMenuText(prefs), msg);
+      await sendText(sock, jid, buildMenuText(prefs, isGroup), msg);
+      return;
+    }
+
+    if (cmd === 'auto' || cmd === 'mod') {
+      if (!isGroup) {
+        await sendText(
+          sock,
+          jid,
+          'ℹ️ Chat peribadi sememangnya dalam mod automatik. Arahan `/auto on` dan `/auto off` digunakan di dalam *Grup WhatsApp*.',
+          msg
+        );
+        return;
+      }
+      const modeArg = arg.toLowerCase();
+      if (modeArg === 'on' || modeArg === 'hidup' || modeArg === 'aktif') {
+        updateUserPrefs(jid, { groupAuto: true });
+        await sendText(
+          sock,
+          jid,
+          '✅ *Mod Auto Grup DIHIDUPKAN!*\nSemua teks Melayu dan Voice Note / fail audio Arab yang dihantar dalam grup ini akan diterjemah secara automatik.\n\nTaip `/auto off` bila-bila masa untuk kembali ke mod arahan.',
+          msg
+        );
+        return;
+      }
+      if (modeArg === 'off' || modeArg === 'mati') {
+        updateUserPrefs(jid, { groupAuto: false });
+        await sendText(
+          sock,
+          jid,
+          '✅ *Mod Auto Grup DIMATIKAN.*\nBot kini hanya membalas arahan `/arab <teks>`, `/melayu <teks>`, atau *reply* `/melayu` pada audio Arab.',
+          msg
+        );
+        return;
+      }
+      await sendText(
+        sock,
+        jid,
+        `⚙️ Status Mod Auto Grup ini: *${prefs.groupAuto ? 'HIDUP ✅' : 'MATI'}*\n• Taip \`/auto on\` untuk hidupkan auto-terjemah semua mesej & audio dalam grup ini.\n• Taip \`/auto off\` untuk guna mod arahan sahaja.`,
+        msg
+      );
       return;
     }
 
@@ -436,11 +535,17 @@ export async function handleIncomingMessage(sock, msg) {
     }
 
     if (cmd === 'arab' || cmd === 'ar') {
-      if (!arg) {
-        await sendText(sock, jid, '👉 Contoh: `/arab Selamat pagi, semoga dipermudahkan urusan.`', msg);
+      const targetText = arg || getQuotedText(content);
+      if (!targetText) {
+        await sendText(
+          sock,
+          jid,
+          '👉 Contoh: `/arab Selamat pagi, semoga dipermudahkan urusan.`\nAtau *reply* `/arab` pada mana-mana mesej teks Melayu.',
+          msg
+        );
         return;
       }
-      await handleMalayToArabicAudio(sock, jid, msg, arg, prefs);
+      await handleMalayToArabicAudio(sock, jid, msg, targetText, prefs);
       return;
     }
 
@@ -462,16 +567,17 @@ export async function handleIncomingMessage(sock, msg) {
         await handleArabicAudioToMalay(sock, jid, msg, msg, audioInfo, prefs);
         return;
       }
-      if (!arg) {
+      const targetText = arg || getQuotedText(content);
+      if (!targetText) {
         await sendText(
           sock,
           jid,
-          '👉 Hantar `/melayu <teks Arab>` atau *reply* `/melayu` pada mana-mana Voice Note / fail audio Arab.',
+          '👉 Hantar `/melayu <teks Arab>` atau *reply* `/melayu` pada mana-mana Voice Note / fail audio / teks Arab.',
           msg
         );
         return;
       }
-      await handleArabicTextToMalay(sock, jid, msg, arg, prefs, false);
+      await handleArabicTextToMalay(sock, jid, msg, targetText, prefs, false);
       return;
     }
 
@@ -480,8 +586,7 @@ export async function handleIncomingMessage(sock, msg) {
 
   // 2. Handle Voice Note / Uploaded Audio File (MP3/WAV/M4A/OGG/etc.)
   if (audioInfo) {
-    if (isGroup && !config.groupAutoReply) {
-      // In groups, only auto-process audio if GROUP_AUTO_REPLY=true
+    if (isGroup && !prefs.groupAuto) {
       return;
     }
     await handleArabicAudioToMalay(sock, jid, msg, msg, audioInfo, prefs);
@@ -490,7 +595,7 @@ export async function handleIncomingMessage(sock, msg) {
 
   // 3. Handle Plain Text
   if (text) {
-    if (isGroup && !config.groupAutoReply) {
+    if (isGroup && !prefs.groupAuto) {
       return;
     }
 
