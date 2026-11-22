@@ -1,5 +1,19 @@
 import 'dotenv/config';
 
+function parseList(value) {
+  return String(value || '')
+    .split(/[\n,;]+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+const geminiKeys = Array.from(
+  new Set([
+    ...parseList(process.env.GEMINI_API_KEYS),
+    ...parseList(process.env.GEMINI_API_KEY),
+  ])
+);
+
 export const config = {
   port: Number(process.env.PORT || 3000),
   defaultVoice: process.env.DEFAULT_VOICE || 'ar-SA-HamedNeural',
@@ -11,6 +25,8 @@ export const config = {
   authDir: process.env.AUTH_DIR || './auth_info',
   qrSecret: (process.env.QR_SECRET || '').trim(),
   publicUrl: (process.env.RENDER_EXTERNAL_URL || '').trim(),
+  geminiApiKeys: geminiKeys,
+  geminiModels: parseList(process.env.GEMINI_MODELS),
 };
 
 export const ARABIC_VOICES = [

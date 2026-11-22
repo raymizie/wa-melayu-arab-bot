@@ -14,7 +14,8 @@ import {
   isMostlyArabic,
 } from '../services/translator.js';
 import { textToArabicVoiceNote } from '../services/tts.js';
-import { transcribeArabicAudio } from '../services/stt.js';
+import { processArabicAudioToMalay } from '../services/stt.js';
+import { getGeminiStatusSummary } from '../services/gemini.js';
 
 // Track message IDs and recent outgoing texts sent by this bot (race-free anti-loop)
 const botSentIds = new Map();
@@ -162,6 +163,7 @@ function buildMenuText(prefs, isGroup = false) {
     '• `/suara` — Pilih 8 suara & loghat Arab (Saudi/Mesir/UAE/Jordan)',
     '• `/laju <perlahan|biasa|laju>` — Laras kelajuan suara Arab',
     '• `/auto on` / `/auto off` — Hidupkan/matikan auto-terjemah dalam grup ini',
+    '• `/model` — Semak status auto-pilih model Gemini & enjin fallback',
     '',
     `🎙️ *Tetapan Semasa:*`,
     `• Suara: ${voiceLabel}`,
@@ -330,9 +332,11 @@ async function handleArabicAudioToMalay(sock, jid, msg, targetMediaMsg, audioInf
       throw new Error('Gagal memuat turun fail audio dari WhatsApp.');
     }
 
-    const { arabicText } = await transcribeArabicAudio(audioBuffer, audioInfo.ext, {
-      lang: prefs.sttLang,
-    });
+    const { arabicText, romanization, malay } = await processArabicAudioToMalay(
+      audioBuffer,
+      audioInfo.ext,
+      { lang: prefs.sttLang }
+    );
 
     if (!arabicText) {
       await sendReact(sock, jid, msg.key, '❓');
@@ -344,8 +348,6 @@ async function handleArabicAudioToMalay(sock, jid, msg, targetMediaMsg, audioInf
       );
       return;
     }
-
-    const { malay, romanization } = await translateArabicToMalay(arabicText);
 
     const lines = [
       `🎙️ *Transkripsi Arab:*`,
@@ -450,6 +452,43 @@ export async function handleIncomingMessage(sock, msg) {
 
     if (cmd === 'menu' || cmd === 'help' || cmd === 'start' || cmd === 'bantuan') {
       await sendText(sock, jid, buildMenuText(prefs, isGroup), msg);
+      return;
+    }
+
+    if (cmd === 'model' || cmd === 'models' || cmd === 'status') {
+      const info = await getGeminiStatusSummary();
+      if (!info.enabled) {
+        await sendText(
+          sock,
+          jid,
+          [
+            '🤖 *STATUS MODEL AI*',
+            '• Gemini Auto-Model: *TIDAK AKTIF* (tiada `GEMINI_API_KEY` di Render)',
+            '• Enjin Semasa: Fallback percuma (Google GTX → Clients5 → MyMemory → Lingva)',
+            '',
+            '💡 *Tip Elak HTTP 429:* Tambah `GEMINI_API_KEY` (percuma dari aistudio.google.com) dalam Environment Variables Render supaya bot boleh auto-tukar antara pelbagai model Gemini!',
+          ].join('\n'),
+          msg
+        );
+        return;
+      }
+
+      const modelLines = info.models.map((m) => `• \`${m.model}\` — ${m.status}`);
+      await sendText(
+        sock,
+        jid,
+        [
+          '🤖 *STATUS GEMINI AUTO-MODEL*',
+          `• Status: *AKTIF ✅* (${info.keysCount} API key)`,
+          `• Model terakhir berjaya: \`${info.lastSuccessfulModel || 'Belum digunakan'}\``,
+          '',
+          '*Senarai Model Auto-Pilih:*',
+          ...modelLines,
+          '',
+          '_Jika satu model kena 429, bot automatik tukar ke model seterusnya + fallback percuma._',
+        ].join('\n'),
+        msg
+      );
       return;
     }
 

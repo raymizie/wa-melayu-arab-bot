@@ -20,3 +20,7 @@ services:
         value: "300"
       - key: QR_SECRET
         sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_API_KEYS
+        sync: false
