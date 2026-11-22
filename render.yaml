@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: wa-melayu-arab-bot
+    runtime: docker
+    plan: free
+    region: singapore
+    healthCheckPath: /health
+    envVars:
+      - key: DEFAULT_VOICE
+        value: ar-SA-HamedNeural
+      - key: DEFAULT_RATE
+        value: "+0%"
+      - key: DEFAULT_STT_LANG
+        value: ar-SA
+      - key: ALLOW_SELF_CHAT
+        value: "true"
+      - key: GROUP_AUTO_REPLY
+        value: "false"
+      - key: MAX_AUDIO_SECONDS
+        value: "300"
+      - key: QR_SECRET
+        sync: false

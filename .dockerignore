@@ -1,0 +1,9 @@
+node_modules
+auth_info
+temp
+data
+.env
+.git
+.gitignore
+*.log
+mula-bot.bat
