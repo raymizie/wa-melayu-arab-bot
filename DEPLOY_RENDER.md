@@ -54,7 +54,10 @@ Projek ini sudah dilengkapi **`Dockerfile`** dan **`render.yaml`** (memasang Nod
    | `DEFAULT_RATE` | `+0%` |
    | `DEFAULT_STT_LANG` | `ar-SA` |
    | `ALLOW_SELF_CHAT` | `true` |
+   | `AUTO_REPLY` | `false` |
    | `GROUP_AUTO_REPLY` | `false` |
+   | `MAX_SESSIONS` | `10` |
+   | `SESSION_DURATION_MINUTES` | `60` |
 5. Di bahagian **Advanced** → **Health Check Path**, isi: `/health`
 6. Klik **Create Web Service**.
 

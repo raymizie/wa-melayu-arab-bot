@@ -14,10 +14,18 @@ services:
         value: ar-SA
       - key: ALLOW_SELF_CHAT
         value: "true"
+      - key: AUTO_REPLY
+        value: "false"
       - key: GROUP_AUTO_REPLY
         value: "false"
       - key: MAX_AUDIO_SECONDS
         value: "300"
+      - key: MAX_SESSIONS
+        value: "10"
+      - key: SESSION_DURATION_MINUTES
+        value: "60"
+      - key: PENDING_QR_TIMEOUT_SECONDS
+        value: "120"
       - key: QR_SECRET
         sync: false
       - key: GEMINI_API_KEY

@@ -35,9 +35,14 @@ function rememberBotMessage(sentMsg) {
   pruneMap(botSentIds);
 }
 
-function rememberBotText(text) {
+function getOwnerKey(sock, sessionId = '') {
+  const phone = stripDevice(sock?.user?.id);
+  return phone || sessionId || 'default';
+}
+
+function rememberBotText(text, ownerKey = 'default') {
   if (!text) return;
-  botSentTexts.set(text.trim(), Date.now());
+  botSentTexts.set(`${ownerKey}:${text.trim()}`, Date.now());
   pruneMap(botSentTexts, 2 * 60 * 1000);
 }
 
@@ -141,35 +146,35 @@ function getQuotedText(content) {
   return extractText(quotedContent);
 }
 
-function buildMenuText(prefs, isGroup = false) {
+function buildMenuText(prefs) {
   const voiceObj = ARABIC_VOICES.find((v) => v.id === prefs.voice);
   const voiceLabel = voiceObj ? voiceObj.label : prefs.voice;
 
   return [
     '🇲🇾 *BOT WHATSAPP MELAYU ↔ ARAB* 🇸🇦',
     '',
-    '📌 *Cara Penggunaan:*',
+    '📌 *Cara Penggunaan (Chat Peribadi & Grup — Mod Panggil Sahaja):*',
     '1️⃣ *Teks Melayu → Audio Arab*',
-    '   Hantar teks Melayu (chat peribadi / grup auto) atau guna `/arab <teks>` (boleh juga *reply* `/arab` pada mesej).',
+    '   Hantar `/arab <teks Melayu>` atau *reply* `/arab` pada mana-mana mesej teks Melayu.',
     '',
-    '2️⃣ *Audio Arab → Teks Melayu*',
-    '   Hantar *Voice Note* atau fail audio Arab (MP3/WAV/M4A/OGG).',
-    '   _(Dalam grup mod arahan: reply `/melayu` pada audio/teks Arab)_',
+    '2️⃣ *Audio / Teks Arab → Teks Melayu*',
+    '   • *Reply* `/melayu` pada Voice Note / fail audio / teks Arab.',
+    '   • Atau hantar `/melayu <teks Arab>` (atau fail audio dengan kapsyen `/melayu`).',
     '',
-    '⚙️ *Senarai Arahan:*',
+    '⚙️ *Senarai Arahan (boleh juga guna awalan `!`):*',
     '• `/menu` — Papar panduan ini',
-    '• `/arab <teks>` — Tukar teks Melayu ke audio Arab',
-    '• `/melayu <teks>` — Terjemah teks Arab / audio yang di-reply ke Melayu',
+    '• `/arab <teks>` — Tukar teks Melayu ke teks & Voice Note Arab',
+    '• `/melayu <teks>` — Terjemah teks Arab atau audio yang di-reply ke Melayu',
     '• `/suara` — Pilih 8 suara & loghat Arab (Saudi/Mesir/UAE/Jordan)',
     '• `/laju <perlahan|biasa|laju>` — Laras kelajuan suara Arab',
-    '• `/auto on` / `/auto off` — Hidupkan/matikan auto-terjemah dalam grup ini',
+    '• `/auto on` / `/auto off` — Hidupkan/matikan auto-terjemah untuk chat ini sahaja (lalai: MATI)',
     '• `/model` — Semak status auto-pilih model Gemini & enjin fallback',
     '',
     `🎙️ *Tetapan Semasa:*`,
     `• Suara: ${voiceLabel}`,
     `• Kelajuan: ${prefs.rate}`,
     `• Loghat STT: ${prefs.sttLang}`,
-    ...(isGroup ? [`• Mod Auto Grup: ${prefs.groupAuto ? 'HIDUP ✅' : 'MATI (guna arahan)'}`] : []),
+    `• Mod Auto Chat: ${prefs.autoReply ? 'HIDUP ✅' : 'MATI (panggil guna arahan)'}`,
   ].join('\n');
 }
 
@@ -187,8 +192,8 @@ function buildVoiceListText(currentVoiceId) {
   return lines.join('\n');
 }
 
-async function sendText(sock, jid, text, quoted) {
-  rememberBotText(text);
+async function sendText(sock, jid, text, quoted, ownerKey) {
+  rememberBotText(text, ownerKey || getOwnerKey(sock));
   const sent = await sock.sendMessage(jid, { text }, quoted ? { quoted } : undefined);
   rememberBotMessage(sent);
   return sent;
@@ -405,7 +410,7 @@ function isSelfChat(sock, msg) {
   return false;
 }
 
-export async function handleIncomingMessage(sock, msg) {
+export async function handleIncomingMessage(sock, msg, context = {}) {
   if (!msg?.message || !msg.key?.remoteJid) return;
 
   const jid = msg.key.remoteJid;
@@ -423,23 +428,26 @@ export async function handleIncomingMessage(sock, msg) {
     return;
   }
 
+  const ownerKey = getOwnerKey(sock, context.sessionId);
   const text = extractText(content);
-  if (msg.key.fromMe && text && botSentTexts.has(text)) return;
+  if (msg.key.fromMe && text && botSentTexts.has(`${ownerKey}:${text}`)) return;
   const isGroup = jid.endsWith('@g.us');
-  const prefs = getUserPrefs(jid);
+  const prefs = getUserPrefs(jid, ownerKey);
   const audioInfo = getAudioInfo(content);
   const isCommand = text.startsWith('/') || text.startsWith('!');
   const selfChat = isSelfChat(sock, msg);
 
   console.log(
-    `[MSG] jid=${jid} alt=${msg.key.remoteJidAlt || '-'} fromMe=${Boolean(msg.key.fromMe)} selfChat=${selfChat} group=${isGroup} auto=${prefs.groupAuto} type=${contentType} text="${text.slice(0, 40)}"`
+    `[MSG] owner=${ownerKey} jid=${jid} alt=${msg.key.remoteJidAlt || '-'} fromMe=${Boolean(msg.key.fromMe)} selfChat=${selfChat} group=${isGroup} auto=${prefs.autoReply} type=${contentType} text="${text.slice(0, 40)}"`
   );
 
+  if (selfChat && !config.allowSelfChat) {
+    return;
+  }
+
   if (msg.key.fromMe) {
-    // Allow self-chat ("Message Yourself"), explicit /commands, AND groups with /auto on
-    const allowedSelf = config.allowSelfChat && selfChat;
-    const allowedGroupAuto = isGroup && prefs.groupAuto;
-    if (!allowedSelf && !allowedGroupAuto && !isCommand) {
+    // Hanya balas mesej sendiri apabila dipanggil dengan arahan (/ atau !) atau jika /auto on diaktifkan untuk chat ini
+    if (!isCommand && !prefs.autoReply) {
       return;
     }
   }
@@ -451,11 +459,13 @@ export async function handleIncomingMessage(sock, msg) {
     const arg = rest.join(' ').trim();
 
     if (cmd === 'menu' || cmd === 'help' || cmd === 'start' || cmd === 'bantuan') {
-      await sendText(sock, jid, buildMenuText(prefs, isGroup), msg);
+      context.onHandled?.();
+      await sendText(sock, jid, buildMenuText(prefs), msg, ownerKey);
       return;
     }
 
     if (cmd === 'model' || cmd === 'models' || cmd === 'status') {
+      context.onHandled?.();
       const info = await getGeminiStatusSummary();
       if (!info.enabled) {
         await sendText(
@@ -468,7 +478,8 @@ export async function handleIncomingMessage(sock, msg) {
             '',
             '💡 *Tip Elak HTTP 429:* Tambah `GEMINI_API_KEY` (percuma dari aistudio.google.com) dalam Environment Variables Render supaya bot boleh auto-tukar antara pelbagai model Gemini!',
           ].join('\n'),
-          msg
+          msg,
+          ownerKey
         );
         return;
       }
@@ -487,54 +498,51 @@ export async function handleIncomingMessage(sock, msg) {
           '',
           '_Jika satu model kena 429, bot automatik tukar ke model seterusnya + fallback percuma._',
         ].join('\n'),
-        msg
+        msg,
+        ownerKey
       );
       return;
     }
 
     if (cmd === 'auto' || cmd === 'mod') {
-      if (!isGroup) {
-        await sendText(
-          sock,
-          jid,
-          'ℹ️ Chat peribadi sememangnya dalam mod automatik. Arahan `/auto on` dan `/auto off` digunakan di dalam *Grup WhatsApp*.',
-          msg
-        );
-        return;
-      }
+      context.onHandled?.();
       const modeArg = arg.toLowerCase();
       if (modeArg === 'on' || modeArg === 'hidup' || modeArg === 'aktif') {
-        updateUserPrefs(jid, { groupAuto: true });
+        updateUserPrefs(jid, { autoReply: true, groupAuto: true }, ownerKey);
         await sendText(
           sock,
           jid,
-          '✅ *Mod Auto Grup DIHIDUPKAN!*\nSemua teks Melayu dan Voice Note / fail audio Arab yang dihantar dalam grup ini akan diterjemah secara automatik.\n\nTaip `/auto off` bila-bila masa untuk kembali ke mod arahan.',
-          msg
+          '✅ *Mod Auto DIHIDUPKAN untuk chat ini!*\nSemua teks Melayu dan Voice Note / fail audio Arab yang dihantar dalam chat ini akan diterjemah secara automatik.\n\nTaip `/auto off` bila-bila masa untuk kembali ke mod panggil sahaja.',
+          msg,
+          ownerKey
         );
         return;
       }
       if (modeArg === 'off' || modeArg === 'mati') {
-        updateUserPrefs(jid, { groupAuto: false });
+        updateUserPrefs(jid, { autoReply: false, groupAuto: false }, ownerKey);
         await sendText(
           sock,
           jid,
-          '✅ *Mod Auto Grup DIMATIKAN.*\nBot kini hanya membalas arahan `/arab <teks>`, `/melayu <teks>`, atau *reply* `/melayu` pada audio Arab.',
-          msg
+          '✅ *Mod Auto DIMATIKAN untuk chat ini.*\nBot kini hanya membalas apabila dipanggil dengan arahan `/arab <teks>`, `/melayu <teks>`, atau *reply* `/arab` / `/melayu` pada mesej atau audio.',
+          msg,
+          ownerKey
         );
         return;
       }
       await sendText(
         sock,
         jid,
-        `⚙️ Status Mod Auto Grup ini: *${prefs.groupAuto ? 'HIDUP ✅' : 'MATI'}*\n• Taip \`/auto on\` untuk hidupkan auto-terjemah semua mesej & audio dalam grup ini.\n• Taip \`/auto off\` untuk guna mod arahan sahaja.`,
-        msg
+        `⚙️ Status Mod Auto chat ini: *${prefs.autoReply ? 'HIDUP ✅' : 'MATI (mod panggil sahaja)'}*\n• Taip \`/auto on\` untuk hidupkan auto-terjemah semua mesej & audio dalam chat ini.\n• Taip \`/auto off\` untuk guna mod panggil sahaja.`,
+        msg,
+        ownerKey
       );
       return;
     }
 
     if (cmd === 'suara' || cmd === 'voice') {
+      context.onHandled?.();
       if (!arg) {
-        await sendText(sock, jid, buildVoiceListText(prefs.voice), msg);
+        await sendText(sock, jid, buildVoiceListText(prefs.voice), msg, ownerKey);
         return;
       }
       const chosen = findVoiceByInput(arg);
@@ -543,44 +551,50 @@ export async function handleIncomingMessage(sock, msg) {
           sock,
           jid,
           `⚠️ Pilihan suara "${arg}" tidak dijumpai.\n\n${buildVoiceListText(prefs.voice)}`,
-          msg
+          msg,
+          ownerKey
         );
         return;
       }
-      updateUserPrefs(jid, { voice: chosen.id, sttLang: chosen.lang });
+      updateUserPrefs(jid, { voice: chosen.id, sttLang: chosen.lang }, ownerKey);
       await sendText(
         sock,
         jid,
         `✅ Suara ditukar kepada *${chosen.label}* (Loghat STT: \`${chosen.lang}\`).`,
-        msg
+        msg,
+        ownerKey
       );
       return;
     }
 
     if (cmd === 'laju' || cmd === 'speed') {
+      context.onHandled?.();
       const preset = SPEED_PRESETS[arg.toLowerCase()];
       if (!preset) {
         await sendText(
           sock,
           jid,
           '⚡ Pilih kelajuan suara Arab:\n• `/laju perlahan` (-20%)\n• `/laju biasa` (Normal)\n• `/laju laju` (+15%)',
-          msg
+          msg,
+          ownerKey
         );
         return;
       }
-      updateUserPrefs(jid, { rate: preset.rate });
-      await sendText(sock, jid, `✅ Kelajuan suara ditukar kepada *${preset.label}*.`, msg);
+      updateUserPrefs(jid, { rate: preset.rate }, ownerKey);
+      await sendText(sock, jid, `✅ Kelajuan suara ditukar kepada *${preset.label}*.`, msg, ownerKey);
       return;
     }
 
     if (cmd === 'arab' || cmd === 'ar') {
+      context.onHandled?.();
       const targetText = arg || getQuotedText(content);
       if (!targetText) {
         await sendText(
           sock,
           jid,
           '👉 Contoh: `/arab Selamat pagi, semoga dipermudahkan urusan.`\nAtau *reply* `/arab` pada mana-mana mesej teks Melayu.',
-          msg
+          msg,
+          ownerKey
         );
         return;
       }
@@ -589,6 +603,7 @@ export async function handleIncomingMessage(sock, msg) {
     }
 
     if (cmd === 'melayu' || cmd === 'ms' || cmd === 'transkrip') {
+      context.onHandled?.();
       // Check if user replied to an audio message with /melayu
       const quotedAudio = getQuotedAudioMessage(msg, content);
       if (quotedAudio) {
@@ -612,7 +627,8 @@ export async function handleIncomingMessage(sock, msg) {
           sock,
           jid,
           '👉 Hantar `/melayu <teks Arab>` atau *reply* `/melayu` pada mana-mana Voice Note / fail audio / teks Arab.',
-          msg
+          msg,
+          ownerKey
         );
         return;
       }
@@ -624,19 +640,23 @@ export async function handleIncomingMessage(sock, msg) {
   }
 
   // 2. Handle Voice Note / Uploaded Audio File (MP3/WAV/M4A/OGG/etc.)
+  // Hanya proses secara automatik jika /auto on diaktifkan untuk chat ini
   if (audioInfo) {
-    if (isGroup && !prefs.groupAuto) {
+    if (!prefs.autoReply) {
       return;
     }
+    context.onHandled?.();
     await handleArabicAudioToMalay(sock, jid, msg, msg, audioInfo, prefs);
     return;
   }
 
   // 3. Handle Plain Text
+  // Hanya proses secara automatik jika /auto on diaktifkan untuk chat ini
   if (text) {
-    if (isGroup && !prefs.groupAuto) {
+    if (!prefs.autoReply) {
       return;
     }
+    context.onHandled?.();
 
     if (isMostlyArabic(text)) {
       await handleArabicTextToMalay(sock, jid, msg, text, prefs, true);
