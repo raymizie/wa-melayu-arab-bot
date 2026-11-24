@@ -29,10 +29,14 @@ function readJsonBody(req) {
   });
 }
 
-function renderDashboardHtml(initialState) {
+export function renderDashboardHtml(initialState) {
   const maxSessions = initialState.maxSessions;
   const durationMins = initialState.sessionDurationMinutes;
   const safeInitialJson = JSON.stringify(initialState).replace(/</g, '\\u003c');
+  const initialQr = (initialState.sessions || []).find((s) => s.status === 'qr' && s.qrDataUrl);
+  const initialQrHtml = initialQr
+    ? `<img src="${initialQr.qrDataUrl}" alt="WhatsApp QR Code" />`
+    : `<div class="qr-loading"><div class="spinner"></div><span>Menjana QR Code...</span></div>`;
 
   return `<!DOCTYPE html>
 <html lang="ms">
@@ -333,10 +337,7 @@ function renderDashboardHtml(initialState) {
 
         <div id="qrPanel" class="qr-panel">
           <div class="qr-box" id="qrBox">
-            <div class="qr-loading">
-              <div class="spinner"></div>
-              <span>Menjana QR Code...</span>
-            </div>
+            ${initialQrHtml}
           </div>
           <div id="qrTimerRow" style="font-size: 0.84rem; color: #94a3b8; margin-bottom: 10px;">
             QR sah selama: <strong id="qrCountdown" style="color: #60a5fa;">--</strong>
@@ -605,7 +606,7 @@ function renderDashboardHtml(initialState) {
               '<td><span class="countdown ' + cdClass + '">' + formatDuration(remSec) + '</span></td>' +
               '<td>' + s.messagesHandled + '</td>' +
               '<td>' +
-                '<button class="btn btn-danger" onclick="logoutUser(\'' + escapeHtml(s.id) + '\', \'' + escapeHtml(displayPhone) + '\')">Log Keluar</button>' +
+                '<button class="btn btn-danger" data-id="' + escapeHtml(s.id) + '" data-label="' + escapeHtml(displayPhone) + '" onclick="logoutUser(this.dataset.id, this.dataset.label)">Log Keluar</button>' +
               '</td>' +
               '</tr>'
             );

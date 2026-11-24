@@ -10,6 +10,7 @@ const TEST_PREFS_FILE = path.join(TEST_ROOT, 'users.json');
 process.env.USER_PREFS_FILE = TEST_PREFS_FILE;
 
 const { SessionManager } = await import('../src/sessionManager.js');
+const { renderDashboardHtml } = await import('../src/qrServer.js');
 
 function createMockSocketFactory() {
   const socketsBySession = new Map();
@@ -331,6 +332,48 @@ async function testAutoGenerateAndRegenerateQr() {
   }
 }
 
+async function testDashboardScriptSyntax() {
+  const html = renderDashboardHtml({
+    maxSessions: 10,
+    sessionDurationMinutes: 60,
+    pendingQrTimeoutSeconds: 120,
+    connectedCount: 0,
+    pendingCount: 1,
+    totalCount: 1,
+    availableSlots: 9,
+    sessions: [
+      {
+        id: 's-test-1',
+        status: 'qr',
+        phone: null,
+        name: null,
+        createdAt: new Date().toISOString(),
+        connectedAt: null,
+        expiresAt: null,
+        remainingSeconds: null,
+        qrExpiresAt: new Date(Date.now() + 120000).toISOString(),
+        qrRemainingSeconds: 120,
+        lastActiveAt: null,
+        messagesHandled: 0,
+        lastError: null,
+        hasQr: true,
+        qrDataUrl: 'data:image/png;base64,MOCKQR',
+      },
+    ],
+    updatedAt: new Date().toISOString(),
+  });
+
+  // 1. Server-side QR img must be present immediately in initial HTML
+  assert.ok(html.includes('<img src="data:image/png;base64,MOCKQR"'), 'QR mesti terus dipaparkan dalam HTML awal');
+
+  // 2. Inline <script> MUST be 100% valid JavaScript (catches template-literal escaping bugs!)
+  const match = html.match(/<script>([\s\S]*?)<\/script>/);
+  assert.ok(match && match[1], 'Tag <script> mesti wujud dalam HTML');
+  assert.doesNotThrow(() => new Function(match[1]), 'Kod JavaScript dalam <script> dashboard mesti bebas ralat sintaks!');
+
+  console.log('✅ [6/6] Sintaks <script> browser dashboard & paparan QR awal lulus!');
+}
+
 async function run() {
   try {
     await testTenConcurrentUsersAndLimit();
@@ -338,7 +381,8 @@ async function run() {
     await testPendingQrTimeoutAndDuplicatePhone();
     await testRestoreExistingSessions();
     await testAutoGenerateAndRegenerateQr();
-    console.log('\n🎉 SEMUA UJIAN MULTI-PENGGUNA (10 SLOT + AUTO QR + AUTO-LOGOUT 1 JAM) LULUS!');
+    await testDashboardScriptSyntax();
+    console.log('\n🎉 SEMUA UJIAN MULTI-PENGGUNA (10 SLOT + AUTO QR + AUTO-LOGOUT 1 JAM + UI SCRIPT) LULUS!');
   } finally {
     fs.rmSync(TEST_ROOT, { recursive: true, force: true });
   }
