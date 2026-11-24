@@ -1,7 +1,5 @@
 import assert from 'node:assert/strict';
 
-process.env.QR_SECRET = 'testsecret123';
-
 const { startQrServer } = await import('../src/qrServer.js');
 
 const PORT = 39123;
@@ -21,15 +19,19 @@ try {
   const rootHead = await fetch(`http://127.0.0.1:${PORT}/`, { method: 'HEAD' });
   assert.equal(rootHead.status, 200);
 
-  const rootNoKey = await fetch(`http://127.0.0.1:${PORT}/`);
-  assert.equal(rootNoKey.status, 403);
-
-  const rootWithKey = await fetch(`http://127.0.0.1:${PORT}/?key=testsecret123`);
-  assert.equal(rootWithKey.status, 200);
-  const html = await rootWithKey.text();
+  // Direct access without any ?key= must succeed (200 OK)
+  const rootGet = await fetch(`http://127.0.0.1:${PORT}/`);
+  assert.equal(rootGet.status, 200);
+  const html = await rootGet.text();
   assert.ok(html.includes('Bot WhatsApp Melayu'));
+  assert.ok(html.includes('Jana Semula QR Code'));
 
-  console.log('✅ Semua ujian endpoint Render & UptimeRobot (/health GET/HEAD, HEAD /, QR_SECRET) LULUS!');
+  const sessionsRes = await fetch(`http://127.0.0.1:${PORT}/api/sessions`);
+  assert.equal(sessionsRes.status, 200);
+  const sessionsData = await sessionsRes.json();
+  assert.equal(sessionsData.maxSessions, 10);
+
+  console.log('✅ Semua ujian endpoint Render & UptimeRobot (/health, /, /api/sessions tanpa key) LULUS!');
 } finally {
   srv.close();
 }

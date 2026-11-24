@@ -27,7 +27,6 @@ export const config = {
   sessionDurationMinutes: Math.max(1, Number(process.env.SESSION_DURATION_MINUTES || 60)),
   pendingQrTimeoutSeconds: Math.max(30, Number(process.env.PENDING_QR_TIMEOUT_SECONDS || 120)),
   authDir: process.env.AUTH_DIR || './auth_info',
-  qrSecret: (process.env.QR_SECRET || '').trim(),
   publicUrl: (process.env.RENDER_EXTERNAL_URL || '').trim(),
   geminiApiKeys: geminiKeys,
   geminiModels: parseList(process.env.GEMINI_MODELS),

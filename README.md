@@ -24,11 +24,11 @@ Klik dua kali fail **`mula-bot.bat`**, atau jalankan di terminal:
 npm start
 ```
 
-### 2. Imbas QR Code (Sehingga 10 Pengguna Serentak)
-1. Buka **`http://localhost:3000`** di browser.
-2. Klik butang **📱 Jana QR Code Baharu (Link Device)**.
+### 2. Imbas QR Code (Auto-Jana — Sehingga 10 Pengguna Serentak)
+1. Buka **`http://localhost:3000`** di browser (terus terbuka tanpa kata laluan).
+2. QR Code akan **dijana secara automatik** (klik **🔄 Jana Semula QR Code** bila-bila masa jika mahu QR baharu).
 3. Buka **WhatsApp** di telefon → **Settings / Tetapan** → **Linked Devices / Peranti Dipautkan** → **Link a Device** → imbas QR.
-4. Setelah tersambung, pengguna lain boleh klik **Jana QR Code Baharu** untuk menyambung peranti mereka (maksimum 10 serentak).
+4. Setelah tersambung, QR baharu akan dijana secara automatik untuk pengguna seterusnya (maksimum 10 serentak).
 5. Setiap sesi kekal aktif selama **1 jam (60 minit)** dan akan log keluar automatik selepas tamat tempoh.
 
 ### 3. Mula Guna di WhatsApp (Chat Peribadi & Grup)

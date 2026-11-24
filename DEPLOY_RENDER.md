@@ -34,8 +34,7 @@ Projek ini sudah dilengkapi **`Dockerfile`** dan **`render.yaml`** (memasang Nod
 1. Daftar / log masuk ke [https://dashboard.render.com](https://dashboard.render.com) menggunakan akaun GitHub anda.
 2. Klik **New +** → pilih **Blueprint**.
 3. Pilih repositori **`wa-melayu-arab-bot`** → klik **Connect**.
-4. Masukkan nilai untuk **`QR_SECRET`** (contoh: `rahsia12345`) — ini menjadi kata laluan untuk halaman imbas QR supaya orang luar tidak boleh mengimbas QR bot anda.
-5. Klik **Apply** dan tunggu proses *build* Docker selesai (biasanya 2–4 minit).
+4. Klik **Apply** dan tunggu proses *build* Docker selesai (biasanya 2–4 minit).
 
 ### Cara B — Cipta Web Service Secara Manual
 1. Di Render Dashboard, klik **New +** → **Web Service**.
@@ -49,7 +48,6 @@ Projek ini sudah dilengkapi **`Dockerfile`** dan **`render.yaml`** (memasang Nod
 4. Di bahagian **Environment Variables**, tambah:
    | Key | Value |
    |---|---|
-   | `QR_SECRET` | `rahsia12345` *(tukar ke kata laluan pilihan anda)* |
    | `DEFAULT_VOICE` | `ar-SA-HamedNeural` |
    | `DEFAULT_RATE` | `+0%` |
    | `DEFAULT_STT_LANG` | `ar-SA` |
@@ -62,14 +60,10 @@ Projek ini sudah dilengkapi **`Dockerfile`** dan **`render.yaml`** (memasang Nod
 6. Klik **Create Web Service**.
 
 ### Imbas QR WhatsApp di Render
-1. Setelah status bertukar kepada **Live** (hijau), salin URL servis anda (contoh: `https://wa-melayu-arab-bot.onrender.com`).
-2. Buka di browser:
-   ```
-   https://wa-melayu-arab-bot.onrender.com/?key=rahsia12345
-   ```
-   *(Jika anda tidak menetapkan `QR_SECRET`, buka sahaja URL utama tanpa `/?key=...`)*
+1. Setelah status bertukar kepada **Live** (hijau), buka URL servis anda di browser (contoh: `https://wa-melayu-arab-bot.onrender.com`).
+2. QR Code akan dijana secara automatik (dan anda boleh klik **Jana Semula QR** jika perlu).
 3. Di telefon, buka **WhatsApp → Linked Devices → Link a Device** dan imbas QR Code yang dipaparkan.
-4. Halaman akan bertukar kepada **✅ Tersambung**.
+4. Sesi anda akan dipaparkan di jadual **Maklumat Pengguna Semasa** (aktif selama 1 jam, maksimum 10 pengguna serentak).
 
 ---
 
@@ -86,10 +80,10 @@ Render pelan **Free** akan menidurkan (*spin down*) server jika tiada trafik HTT
    - **Monitoring Interval:** `Every 5 minutes`
    - **Request Timeout:** `30 seconds`
 4. Klik **Create Monitor**.
-5. Pastikan status monitor bertukar menjadi **Up** (hijau). Endpoint `/health` menyokong kedua-dua `GET` dan `HEAD` serta membalas `200 OK` tanpa memerlukan `QR_SECRET`.
+5. Pastikan status monitor bertukar menjadi **Up** (hijau). Endpoint `/health` menyokong kedua-dua `GET` dan `HEAD` serta membalas `200 OK`.
 
 ---
 
 ## Nota Penting Tentang Render Free Tier
-- **Storan Sementara (*Ephemeral Disk*):** Pelan Free Render tidak mempunyai *persistent disk*. Dengan UptimeRobot, server kekal aktif tanpa *sleep*. Namun jika anda melakukan *redeploy* (push kod baharu) atau Render melakukan penyelenggaraan berkala, fail sesi dalam `auth_info/` akan terpadam — anda hanya perlu buka semula `https://URL-ANDA.onrender.com/?key=KATA_LALUAN` dan imbas QR semula (~5 saat).
+- **Storan Sementara (*Ephemeral Disk*):** Pelan Free Render tidak mempunyai *persistent disk*. Dengan UptimeRobot, server kekal aktif tanpa *sleep*. Namun jika anda melakukan *redeploy* (push kod baharu) atau Render melakukan penyelenggaraan berkala, fail sesi dalam `auth_info/` akan terpadam — anda hanya perlu buka semula `https://URL-ANDA.onrender.com` dan imbas QR semula (~5 saat).
 - **Jika mahu sesi WhatsApp kekal walaupun selepas redeploy:** Naik taraf ke Render **Starter** + tambah **Persistent Disk** (mount path `/app/auth_info`) dan tetapkan env `AUTH_DIR=/app/auth_info`.

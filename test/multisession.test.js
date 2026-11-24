@@ -269,13 +269,76 @@ async function testRestoreExistingSessions() {
   }
 }
 
+async function testAutoGenerateAndRegenerateQr() {
+  const authDir = path.join(TEST_AUTH_DIR, 'case5');
+  const { factory, socketsBySession } = createMockSocketFactory();
+
+  const manager = new SessionManager({
+    maxSessions: 2,
+    sessionDurationMs: 60 * 60 * 1000,
+    pendingQrTimeoutMs: 60 * 1000,
+    authDir,
+    autoGenerateQr: true,
+    createSocketFn: factory,
+    qrToDataUrl: async (qr) => `data:image/png;base64,${qr}`,
+  });
+
+  try {
+    // 1. Auto-generate standby QR on startup
+    const first = await manager.ensureStandbyQr();
+    assert.ok(first?.id, 'Auto-jana QR patut cipta sesi awal');
+    assert.equal(manager.getPublicState().pendingCount, 1);
+
+    // Calling ensureStandbyQr again should reuse the same pending session (no duplicate)
+    const same = await manager.ensureStandbyQr();
+    assert.equal(same.id, first.id, 'Tidak boleh cipta QR pendua jika sudah ada QR sedia');
+
+    // 2. Regenerate QR replaces old pending QR with a brand new one
+    const regen = await manager.regenerateQr(first.id);
+    assert.notEqual(regen.id, first.id, 'Jana semula mesti hasilkan sesi QR baharu');
+    assert.equal(manager.getSessionPublic(first.id), null, 'QR lama mesti ditutup');
+    assert.equal(manager.getPublicState().pendingCount, 1);
+
+    // 3. When user #1 connects, QR for user #2 is auto-generated immediately!
+    const sock1 = socketsBySession.get(regen.id);
+    sock1.user = { id: '60133333333:1@s.whatsapp.net', name: 'Aisyah' };
+    sock1.ev.emit('connection.update', { connection: 'open' });
+    await sleep(30);
+
+    const stAfter1 = manager.getPublicState();
+    assert.equal(stAfter1.connectedCount, 1);
+    assert.equal(stAfter1.pendingCount, 1, 'QR baharu mesti auto-jana untuk pengguna seterusnya');
+
+    // 4. When user #2 connects (slots full 2/2), NO new QR is auto-generated
+    const nextPending = stAfter1.sessions.find((s) => s.status !== 'connected');
+    const sock2 = socketsBySession.get(nextPending.id);
+    sock2.user = { id: '60144444444:1@s.whatsapp.net', name: 'Ahmad' };
+    sock2.ev.emit('connection.update', { connection: 'open' });
+    await sleep(30);
+
+    assert.equal(manager.getPublicState().connectedCount, 2);
+    assert.equal(manager.getPublicState().pendingCount, 0, 'Bila penuh 2/2, jangan auto-jana QR');
+
+    // 5. When user #1 logs out, standby QR is auto-generated again!
+    await manager.logoutSession(regen.id, 'manual_web');
+    await sleep(30);
+    assert.equal(manager.getPublicState().connectedCount, 1);
+    assert.equal(manager.getPublicState().pendingCount, 1, 'Bila slot kosong semula, auto-jana QR semula');
+
+    console.log('✅ [5/5] Auto-jana QR, jana semula QR & auto-jana selepas sambung/log keluar lulus!');
+  } finally {
+    await manager.shutdown();
+  }
+}
+
 async function run() {
   try {
     await testTenConcurrentUsersAndLimit();
     await testAutoLogoutAfterDuration();
     await testPendingQrTimeoutAndDuplicatePhone();
     await testRestoreExistingSessions();
-    console.log('\n🎉 SEMUA UJIAN MULTI-PENGGUNA (10 SLOT + AUTO-LOGOUT 1 JAM) LULUS!');
+    await testAutoGenerateAndRegenerateQr();
+    console.log('\n🎉 SEMUA UJIAN MULTI-PENGGUNA (10 SLOT + AUTO QR + AUTO-LOGOUT 1 JAM) LULUS!');
   } finally {
     fs.rmSync(TEST_ROOT, { recursive: true, force: true });
   }

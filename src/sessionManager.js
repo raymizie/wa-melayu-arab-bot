@@ -17,25 +17,41 @@ const VERSION_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 
 let cachedWaVersion = null;
 let cachedWaVersionAt = 0;
+let versionFetchPromise = null;
 
 async function getSafeBaileysVersion() {
   if (cachedWaVersion && Date.now() - cachedWaVersionAt < VERSION_CACHE_TTL_MS) {
     return cachedWaVersion;
   }
-  try {
-    const result = await Promise.race([
+  if (!versionFetchPromise) {
+    versionFetchPromise = Promise.race([
       fetchLatestBaileysVersion(),
       new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Timeout fetchLatestBaileysVersion')), 8000)
+        setTimeout(() => reject(new Error('Timeout fetchLatestBaileysVersion')), 2500)
       ),
-    ]);
-    cachedWaVersion = result.version;
-    cachedWaVersionAt = Date.now();
-    return cachedWaVersion;
-  } catch (err) {
-    console.warn(`[WA] Guna versi fallback (${err.message})`);
-    return cachedWaVersion || FALLBACK_WA_VERSION;
+    ])
+      .then((result) => {
+        cachedWaVersion = result.version;
+        cachedWaVersionAt = Date.now();
+        return cachedWaVersion;
+      })
+      .catch((err) => {
+        console.warn(`[WA] Guna versi fallback (${err.message})`);
+        if (!cachedWaVersion) {
+          cachedWaVersion = FALLBACK_WA_VERSION;
+          cachedWaVersionAt = Date.now();
+        }
+        return cachedWaVersion;
+      })
+      .finally(() => {
+        versionFetchPromise = null;
+      });
   }
+  return versionFetchPromise;
+}
+
+export async function warmupBaileysVersion() {
+  return getSafeBaileysVersion();
 }
 
 function stripDevice(jid) {
@@ -63,6 +79,9 @@ async function defaultCreateSocket(session) {
     browser: Browsers.ubuntu('Bot Melayu-Arab'),
     markOnlineOnConnect: false,
     syncFullHistory: false,
+    shouldSyncHistoryMessage: () => false,
+    getMessage: async () => undefined,
+    connectTimeoutMs: 20000,
   });
 
   return { sock, saveCreds, version };
@@ -81,9 +100,11 @@ export class SessionManager {
     this.qrToDataUrl =
       options.qrToDataUrl ?? ((qr) => QRCode.toDataURL(qr, { width: 320, margin: 2 }));
     this.notifyOnExpire = options.notifyOnExpire ?? true;
+    this.autoGenerateQr = options.autoGenerateQr ?? false;
 
     this.sessions = new Map();
     this.seq = 0;
+    this._standbyPromise = null;
   }
 
   getCounts() {
@@ -221,6 +242,71 @@ export class SessionManager {
         console.error(`[Session ${session.id}] Gagal memulihkan sesi:`, err.message);
       });
     }
+  }
+
+  async ensureStandbyQr() {
+    if (this._standbyPromise) return this._standbyPromise;
+
+    const { connectedCount, pendingCount, availableSlots } = this.getCounts();
+    if (connectedCount >= this.maxSessions) return null;
+
+    if (pendingCount > 0) {
+      for (const s of this.sessions.values()) {
+        if (!s.closing && (s.status === 'starting' || s.status === 'qr')) {
+          return this.serializeSession(s);
+        }
+      }
+    }
+
+    if (availableSlots <= 0) return null;
+
+    this._standbyPromise = this.createSession()
+      .catch((err) => {
+        if (err.code !== 'SLOTS_FULL' && err.code !== 'SLOTS_PENDING_FULL') {
+          console.warn('[Session] Gagal auto-jana QR:', err.message);
+        }
+        return null;
+      })
+      .finally(() => {
+        this._standbyPromise = null;
+      });
+
+    return this._standbyPromise;
+  }
+
+  async regenerateQr(replaceSessionId = null) {
+    const { connectedCount } = this.getCounts();
+    if (connectedCount >= this.maxSessions) {
+      const err = new Error(
+        `Slot penuh (${connectedCount}/${this.maxSessions} pengguna sedang aktif). Sila tunggu sesi pengguna lain tamat.`
+      );
+      err.code = 'SLOTS_FULL';
+      err.statusCode = 409;
+      throw err;
+    }
+
+    let targetId = null;
+    if (replaceSessionId) {
+      const existing = this.sessions.get(replaceSessionId);
+      if (existing && !existing.closing && !existing.connectedAt) {
+        targetId = replaceSessionId;
+      }
+    }
+
+    if (!targetId) {
+      for (const s of this.sessions.values()) {
+        if (!s.closing && !s.connectedAt) {
+          targetId = s.id;
+          break;
+        }
+      }
+    }
+
+    if (targetId) {
+      await this.logoutSession(targetId, 'regenerated', { skipRemoteLogout: true });
+    }
+
+    return this.createSession();
   }
 
   async createSession() {
@@ -398,11 +484,16 @@ export class SessionManager {
         this._saveMeta(session);
         this._scheduleExpiry(session);
 
-        const { connectedCount } = this.getCounts();
+        const { connectedCount, pendingCount } = this.getCounts();
         const minsLeft = Math.max(1, Math.ceil((session.expiresAt - now) / 60000));
         console.log(
           `✅ [Session ${session.id}] Tersambung: ${session.name || '-'} (${session.phone || 'Aktif'}) | Pengguna Aktif: ${connectedCount}/${this.maxSessions} | Auto-logout dalam ${minsLeft} minit`
         );
+
+        // Auto-generate next QR immediately for the next user if slots remain
+        if (this.autoGenerateQr && connectedCount < this.maxSessions && pendingCount === 0) {
+          this.ensureStandbyQr().catch(() => {});
+        }
       }
 
       if (connection === 'close') {
@@ -579,10 +670,21 @@ export class SessionManager {
 
     this._cleanupAuthDir(session.authPath);
 
-    const { connectedCount } = this.getCounts();
+    const { connectedCount, pendingCount } = this.getCounts();
     console.log(
       `👋 [Session ${id}] Log keluar (${reason}) [${session.phone || 'QR belum diimbas'}] | Pengguna Aktif: ${connectedCount}/${this.maxSessions}`
     );
+
+    if (
+      this.autoGenerateQr &&
+      wasConnected &&
+      reason !== 'regenerated' &&
+      reason !== 'replaced_by_new_session' &&
+      connectedCount < this.maxSessions &&
+      pendingCount === 0
+    ) {
+      this.ensureStandbyQr().catch(() => {});
+    }
 
     return true;
   }

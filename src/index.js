@@ -1,5 +1,5 @@
 import { config } from './config.js';
-import { SessionManager } from './sessionManager.js';
+import { SessionManager, warmupBaileysVersion } from './sessionManager.js';
 import { startQrServer } from './qrServer.js';
 
 const sessionManager = new SessionManager({
@@ -7,22 +7,28 @@ const sessionManager = new SessionManager({
   sessionDurationMs: config.sessionDurationMinutes * 60 * 1000,
   pendingQrTimeoutMs: config.pendingQrTimeoutSeconds * 1000,
   authDir: config.authDir,
+  autoGenerateQr: true,
 });
 
 async function main() {
   const portalUrl = config.publicUrl || `http://localhost:${config.port}`;
-  const suffix = config.qrSecret ? '/?key=KATA_LALUAN_ANDA' : '';
 
   console.log('\n==========================================================');
   console.log('🇲🇾 BOT WHATSAPP MELAYU ↔ ARAB (MOD MULTI-PENGGUNA) 🇸🇦');
-  console.log(`• Portal QR & Info Pengguna : ${portalUrl}${suffix}`);
+  console.log(`• Portal QR & Info Pengguna : ${portalUrl}`);
   console.log(`• Had Maksima Serentak      : ${config.maxSessions} pengguna`);
   console.log(`• Tempoh Auto-Logout        : ${config.sessionDurationMinutes} minit selepas sambung`);
   console.log('• Mod Balas                 : Panggil sahaja (/arab, /melayu, /menu)');
   console.log('==========================================================\n');
 
   startQrServer(config.port, sessionManager);
+
+  // Warm up WhatsApp version in background & pre-generate first QR immediately
+  await warmupBaileysVersion();
   await sessionManager.restoreExistingSessions();
+  sessionManager.ensureStandbyQr().catch((err) => {
+    console.warn('[WA] Gagal pra-jana QR awal:', err.message);
+  });
 }
 
 process.on('SIGINT', async () => {

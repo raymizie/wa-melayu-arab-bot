@@ -7,9 +7,32 @@ function sendJson(res, statusCode, data) {
   res.end(JSON.stringify(data));
 }
 
+function readJsonBody(req) {
+  return new Promise((resolve) => {
+    let raw = '';
+    req.on('data', (chunk) => {
+      raw += chunk;
+      if (raw.length > 16384) raw = raw.slice(0, 16384);
+    });
+    req.on('end', () => {
+      if (!raw.trim()) {
+        resolve({});
+        return;
+      }
+      try {
+        resolve(JSON.parse(raw));
+      } catch {
+        resolve({});
+      }
+    });
+    req.on('error', () => resolve({}));
+  });
+}
+
 function renderDashboardHtml(initialState) {
   const maxSessions = initialState.maxSessions;
   const durationMins = initialState.sessionDurationMinutes;
+  const safeInitialJson = JSON.stringify(initialState).replace(/</g, '\\u003c');
 
   return `<!DOCTYPE html>
 <html lang="ms">
@@ -47,18 +70,9 @@ function renderDashboardHtml(initialState) {
       flex-direction: column;
       gap: 20px;
     }
-    .header {
-      text-align: center;
-    }
-    .header h1 {
-      font-size: 1.6rem;
-      margin: 0 0 6px;
-    }
-    .header .sub {
-      color: var(--muted);
-      font-size: 0.94rem;
-      margin: 0;
-    }
+    .header { text-align: center; }
+    .header h1 { font-size: 1.6rem; margin: 0 0 6px; }
+    .header .sub { color: var(--muted); font-size: 0.94rem; margin: 0; }
     .grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
@@ -92,15 +106,8 @@ function renderDashboardHtml(initialState) {
       padding: 12px 10px;
       text-align: center;
     }
-    .stat .val {
-      font-size: 1.45rem;
-      font-weight: 700;
-      display: block;
-    }
-    .stat .lbl {
-      font-size: 0.78rem;
-      color: var(--muted);
-    }
+    .stat .val { font-size: 1.45rem; font-weight: 700; display: block; }
+    .stat .lbl { font-size: 0.78rem; color: var(--muted); }
     .progress-wrap {
       background: var(--card-dark);
       border-radius: 999px;
@@ -115,9 +122,7 @@ function renderDashboardHtml(initialState) {
       width: 0%;
       transition: width 0.3s ease;
     }
-    .progress-bar.full {
-      background: linear-gradient(90deg, #dc2626, #ef4444);
-    }
+    .progress-bar.full { background: linear-gradient(90deg, #dc2626, #ef4444); }
     .btn {
       display: inline-flex;
       align-items: center;
@@ -125,9 +130,9 @@ function renderDashboardHtml(initialState) {
       gap: 8px;
       border: none;
       border-radius: 12px;
-      padding: 12px 18px;
+      padding: 11px 16px;
       font-weight: 600;
-      font-size: 0.95rem;
+      font-size: 0.92rem;
       cursor: pointer;
       transition: background 0.15s, opacity 0.15s;
     }
@@ -136,13 +141,8 @@ function renderDashboardHtml(initialState) {
       color: #fff;
       width: 100%;
     }
-    .btn-primary:hover:not(:disabled) {
-      background: var(--primary-hover);
-    }
-    .btn-primary:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-    }
+    .btn-primary:hover:not(:disabled) { background: var(--primary-hover); }
+    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
     .btn-danger {
       background: #dc262622;
       color: #fca5a5;
@@ -151,22 +151,7 @@ function renderDashboardHtml(initialState) {
       font-size: 0.82rem;
       border-radius: 9px;
     }
-    .btn-danger:hover {
-      background: #dc262644;
-      color: #fff;
-    }
-    .btn-ghost {
-      background: transparent;
-      color: var(--muted);
-      border: 1px solid var(--border);
-      padding: 8px 14px;
-      font-size: 0.85rem;
-      margin-top: 10px;
-    }
-    .btn-ghost:hover {
-      color: #fff;
-      border-color: #64748b;
-    }
+    .btn-danger:hover { background: #dc262644; color: #fff; }
     .alert {
       border-radius: 12px;
       padding: 12px 14px;
@@ -191,33 +176,45 @@ function renderDashboardHtml(initialState) {
       border: 1px solid #2563eb66;
       color: #93c5fd;
     }
-    .qr-panel {
-      text-align: center;
-      margin-top: 14px;
-      display: none;
-    }
-    .qr-panel.show { display: block; }
+    .qr-panel { text-align: center; margin-bottom: 12px; }
     .qr-box {
       background: #ffffff;
       border-radius: 16px;
       padding: 14px;
       display: inline-block;
-      margin: 8px 0 12px;
+      margin: 4px 0 10px;
     }
-    .qr-box img {
-      display: block;
-      width: 240px;
-      height: 240px;
-    }
+    .qr-box img { display: block; width: 240px; height: 240px; }
     .qr-loading {
       width: 240px;
       height: 240px;
       display: flex;
+      flex-direction: column;
       align-items: center;
       justify-content: center;
+      gap: 10px;
       color: #334155;
       font-weight: 600;
       font-size: 0.9rem;
+    }
+    .spinner {
+      width: 34px;
+      height: 34px;
+      border: 4px solid #cbd5e1;
+      border-top-color: #2563eb;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .full-box {
+      background: #dc262618;
+      border: 1px solid #dc262655;
+      border-radius: 14px;
+      padding: 20px 16px;
+      text-align: center;
+      color: #fca5a5;
+      margin-bottom: 12px;
+      font-size: 0.92rem;
     }
     .steps {
       text-align: left;
@@ -229,10 +226,7 @@ function renderDashboardHtml(initialState) {
       color: #cbd5e1;
       line-height: 1.6;
     }
-    .steps ol, .steps ul {
-      margin: 6px 0 0;
-      padding-left: 18px;
-    }
+    .steps ol, .steps ul { margin: 6px 0 0; padding-left: 18px; }
     .badge {
       display: inline-flex;
       align-items: center;
@@ -258,14 +252,8 @@ function renderDashboardHtml(initialState) {
       color: #fbbf24;
       border: 1px solid #f59e0b55;
     }
-    .table-wrap {
-      overflow-x: auto;
-    }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 0.88rem;
-    }
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
     th, td {
       text-align: left;
       padding: 11px 10px;
@@ -318,7 +306,7 @@ function renderDashboardHtml(initialState) {
     <div class="grid">
       <div class="card">
         <h2>
-          <span>📱 Link Device (Imbas QR)</span>
+          <span>📱 Link Device (Auto QR)</span>
           <span id="slotBadge" class="badge connected">0 / ${maxSessions} Aktif</span>
         </h2>
 
@@ -329,7 +317,7 @@ function renderDashboardHtml(initialState) {
           </div>
           <div class="stat">
             <span class="val" id="pendingCount">0</span>
-            <span class="lbl">Menunggu QR</span>
+            <span class="lbl">QR Sedia</span>
           </div>
           <div class="stat">
             <span class="val" id="availableSlots">${maxSessions}</span>
@@ -343,27 +331,35 @@ function renderDashboardHtml(initialState) {
 
         <div id="noticeBox" class="alert"></div>
 
-        <button id="btnNewQr" class="btn btn-primary" onclick="requestNewQr()">
-          📱 Jana QR Code Baharu (Link Device)
-        </button>
-
         <div id="qrPanel" class="qr-panel">
           <div class="qr-box" id="qrBox">
-            <div class="qr-loading">Menjana QR Code...</div>
+            <div class="qr-loading">
+              <div class="spinner"></div>
+              <span>Menjana QR Code...</span>
+            </div>
           </div>
-          <div style="font-size: 0.84rem; color: #94a3b8; margin-bottom: 10px;">
+          <div id="qrTimerRow" style="font-size: 0.84rem; color: #94a3b8; margin-bottom: 10px;">
             QR sah selama: <strong id="qrCountdown" style="color: #60a5fa;">--</strong>
           </div>
-          <div class="steps">
-            <strong>Cara Sambung:</strong>
-            <ol>
-              <li>Buka <strong>WhatsApp</strong> di telefon anda.</li>
-              <li>Tekan <strong>Settings / Tetapan</strong> → <strong>Linked Devices</strong>.</li>
-              <li>Tekan <strong>Link a Device</strong> dan imbas QR di atas.</li>
-              <li>Selepas tersambung, sesi aktif selama <strong>${durationMins} minit</strong> sebelum log keluar automatik.</li>
-            </ol>
-          </div>
-          <button class="btn btn-ghost" onclick="cancelMyQr()">❌ Batal QR Ini</button>
+        </div>
+
+        <div id="fullBox" class="full-box" style="display:none;">
+          <strong>🚫 Slot Penuh (${maxSessions}/${maxSessions} Pengguna Aktif)</strong><br/>
+          Sila tunggu salah satu sesi tamat tempoh (1 jam) atau dilog keluar.
+        </div>
+
+        <button id="btnRegenerate" class="btn btn-primary" onclick="regenerateQr()">
+          🔄 Jana Semula QR Code
+        </button>
+
+        <div class="steps" style="margin-top: 14px;">
+          <strong>Cara Sambung:</strong>
+          <ol>
+            <li>Buka <strong>WhatsApp</strong> di telefon anda.</li>
+            <li>Tekan <strong>Settings / Tetapan</strong> → <strong>Linked Devices</strong>.</li>
+            <li>Tekan <strong>Link a Device</strong> dan imbas QR di atas.</li>
+            <li>Selepas tersambung, QR baharu dijana automatik untuk orang lain (maksimum ${maxSessions} serentak).</li>
+          </ol>
         </div>
       </div>
 
@@ -382,7 +378,7 @@ function renderDashboardHtml(initialState) {
           <strong>Polisi Multi-Pengguna:</strong>
           <ul>
             <li>Sehingga <strong>${maxSessions} pengguna</strong> boleh menyambung WhatsApp serentak.</li>
-            <li>Apabila seseorang selesai imbas QR, orang lain boleh klik <strong>Jana QR Code Baharu</strong> untuk dapatkan QR baharu.</li>
+            <li>QR Code <strong>dijana secara automatik</strong> dan boleh dijana semula bila-bila masa dengan butang <strong>Jana Semula QR Code</strong>.</li>
             <li>Setiap pengguna diberi tempoh <strong>${durationMins} minit</strong> selepas sambung dan akan <strong>log keluar automatik</strong> apabila tamat masa.</li>
           </ul>
         </div>
@@ -392,7 +388,7 @@ function renderDashboardHtml(initialState) {
     <div class="card">
       <h2>
         <span>👥 Maklumat Pengguna Semasa</span>
-        <span id="lastUpdated" style="font-size: 0.78rem; color: #94a3b8; font-weight: 400;">Memuatkan...</span>
+        <span id="lastUpdated" style="font-size: 0.78rem; color: #94a3b8; font-weight: 400;">Dikemas kini</span>
       </h2>
       <div id="usersContainer" class="table-wrap">
         <div class="empty-state">Memuatkan senarai pengguna...</div>
@@ -401,19 +397,10 @@ function renderDashboardHtml(initialState) {
   </div>
 
   <script>
-    const urlParams = new URLSearchParams(window.location.search);
-    const qrKey = urlParams.get('key') || '';
-    const STORAGE_KEY = 'wa_bot_my_qr_session_id';
-
-    let latestState = null;
-    let myQrSessionId = sessionStorage.getItem(STORAGE_KEY) || null;
-    let isRequesting = false;
-
-    function apiUrl(path) {
-      if (!qrKey) return path;
-      const sep = path.includes('?') ? '&' : '?';
-      return path + sep + 'key=' + encodeURIComponent(qrKey);
-    }
+    let latestState = ${safeInitialJson};
+    let activeQrId = null;
+    let isRegenerating = false;
+    let pollTimer = null;
 
     function escapeHtml(str) {
       return String(str ?? '')
@@ -456,57 +443,51 @@ function renderDashboardHtml(initialState) {
       box.textContent = message;
     }
 
-    function setMyQrSession(id) {
-      myQrSessionId = id;
-      if (id) sessionStorage.setItem(STORAGE_KEY, id);
-      else sessionStorage.removeItem(STORAGE_KEY);
+    function computeRemainingSec(isoTarget) {
+      if (!isoTarget) return null;
+      return Math.max(0, Math.ceil((new Date(isoTarget).getTime() - Date.now()) / 1000));
     }
 
-    async function requestNewQr() {
-      if (isRequesting) return;
-      isRequesting = true;
+    async function regenerateQr() {
+      if (isRegenerating) return;
+      isRegenerating = true;
       showNotice('', '');
-      const btn = document.getElementById('btnNewQr');
+
+      const btn = document.getElementById('btnRegenerate');
       btn.disabled = true;
-      btn.textContent = '⏳ Menjana QR Code...';
+      btn.textContent = '⏳ Menjana Semula QR Code...';
+
+      const qrBox = document.getElementById('qrBox');
+      qrBox.innerHTML = '<div class="qr-loading"><div class="spinner"></div><span>Menjana QR Baharu...</span></div>';
 
       try {
-        const res = await fetch(apiUrl('/api/sessions'), { method: 'POST' });
+        const res = await fetch('/api/sessions/regenerate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ replaceId: activeQrId }),
+        });
         const data = await res.json();
         if (!res.ok || !data.ok) {
-          showNotice('error', data.error || 'Gagal menjana QR Code.');
+          showNotice('error', data.error || 'Gagal menjana semula QR Code.');
         } else {
-          setMyQrSession(data.session.id);
-          await fetchState();
+          activeQrId = data.session.id;
         }
       } catch (err) {
         showNotice('error', 'Ralat sambungan ke pelayan: ' + err.message);
       } finally {
-        isRequesting = false;
-        renderUi();
+        isRegenerating = false;
+        await fetchState();
       }
-    }
-
-    async function cancelMyQr() {
-      if (!myQrSessionId) return;
-      const target = myQrSessionId;
-      setMyQrSession(null);
-      try {
-        await fetch(apiUrl('/api/sessions/' + encodeURIComponent(target)), { method: 'DELETE' });
-      } catch {
-        // ignore
-      }
-      await fetchState();
     }
 
     async function logoutUser(id, label) {
       if (!confirm('Log keluar sesi ' + label + ' sekarang?')) return;
       try {
-        const res = await fetch(apiUrl('/api/sessions/' + encodeURIComponent(id)), {
+        const res = await fetch('/api/sessions/' + encodeURIComponent(id), {
           method: 'DELETE',
         });
         if (res.ok) {
-          if (myQrSessionId === id) setMyQrSession(null);
+          if (activeQrId === id) activeQrId = null;
           showNotice('info', 'Sesi ' + label + ' telah dilog keluar.');
         }
       } catch (err) {
@@ -515,18 +496,13 @@ function renderDashboardHtml(initialState) {
       await fetchState();
     }
 
-    function computeRemainingSec(isoTarget) {
-      if (!isoTarget) return null;
-      return Math.max(0, Math.ceil((new Date(isoTarget).getTime() - Date.now()) / 1000));
-    }
-
     function renderUi() {
       if (!latestState) return;
       const st = latestState;
 
       document.getElementById('connectedCount').textContent = st.connectedCount;
       document.getElementById('pendingCount').textContent = st.pendingCount;
-      document.getElementById('availableSlots').textContent = st.availableSlots;
+      document.getElementById('availableSlots').textContent = Math.max(0, st.maxSessions - st.connectedCount);
       document.getElementById('slotBadge').textContent = st.connectedCount + ' / ' + st.maxSessions + ' Aktif';
 
       const pct = Math.min(100, Math.round((st.connectedCount / st.maxSessions) * 100));
@@ -534,86 +510,72 @@ function renderDashboardHtml(initialState) {
       bar.style.width = pct + '%';
       bar.className = 'progress-bar' + (st.connectedCount >= st.maxSessions ? ' full' : '');
 
-      const mySession = myQrSessionId
-        ? st.sessions.find((s) => s.id === myQrSessionId)
-        : null;
-
-      if (myQrSessionId && !mySession) {
-        setMyQrSession(null);
-      } else if (mySession && mySession.status === 'connected') {
-        const label = mySession.name || mySession.phone || 'Peranti anda';
-        showNotice(
-          'success',
-          '✅ ' + label + ' berjaya tersambung! Sesi aktif selama ' + st.sessionDurationMinutes + ' minit. Pengguna lain kini boleh jana QR baharu.'
-        );
-        setMyQrSession(null);
+      // Check if previously displayed QR just connected!
+      if (activeQrId) {
+        const prev = st.sessions.find((s) => s.id === activeQrId);
+        if (prev && prev.status === 'connected') {
+          const label = prev.name || (prev.phone ? '+' + prev.phone : 'Peranti');
+          showNotice(
+            'success',
+            '✅ ' + label + ' berjaya tersambung (' + st.sessionDurationMinutes + ' minit)! QR baharu untuk pengguna seterusnya dijana automatik.'
+          );
+          activeQrId = null;
+        }
       }
 
-      const activePending = myQrSessionId
-        ? st.sessions.find((s) => s.id === myQrSessionId && (s.status === 'starting' || s.status === 'qr'))
-        : null;
+      const pendingSessions = st.sessions.filter(
+        (s) => s.status === 'qr' || s.status === 'starting'
+      );
+      let currentQr = pendingSessions.find((s) => s.id === activeQrId) || pendingSessions[0] || null;
+      if (currentQr) activeQrId = currentQr.id;
 
       const qrPanel = document.getElementById('qrPanel');
+      const fullBox = document.getElementById('fullBox');
       const qrBox = document.getElementById('qrBox');
       const qrCountdown = document.getElementById('qrCountdown');
-      const btn = document.getElementById('btnNewQr');
+      const btn = document.getElementById('btnRegenerate');
 
-      if (activePending) {
-        qrPanel.className = 'qr-panel show';
-        if (activePending.qrDataUrl) {
-          const existingImg = qrBox.querySelector('img');
-          if (!existingImg || existingImg.src !== activePending.qrDataUrl) {
-            qrBox.innerHTML = '<img src="' + activePending.qrDataUrl + '" alt="WhatsApp QR Code" />';
-          }
-        } else {
-          qrBox.innerHTML = '<div class="qr-loading">⏳ Menyediakan QR WhatsApp...</div>';
-        }
-        const qrSec = computeRemainingSec(activePending.qrExpiresAt);
-        qrCountdown.textContent = formatDuration(qrSec);
+      if (st.connectedCount >= st.maxSessions) {
+        qrPanel.style.display = 'none';
+        fullBox.style.display = 'block';
         btn.disabled = true;
-        btn.textContent = '📱 QR Sedang Aktif — Sila Imbas Di Bawah';
+        btn.textContent = '🚫 Slot Penuh (' + st.connectedCount + '/' + st.maxSessions + ' Aktif)';
       } else {
-        qrPanel.className = 'qr-panel';
-        if (isRequesting) {
-          btn.disabled = true;
-          btn.textContent = '⏳ Menjana QR Code...';
-        } else if (st.connectedCount >= st.maxSessions) {
-          btn.disabled = true;
-          btn.textContent = '🚫 Slot Penuh (' + st.connectedCount + '/' + st.maxSessions + ' Pengguna Aktif)';
-        } else if (st.availableSlots <= 0) {
-          btn.disabled = true;
-          btn.textContent = '⏳ Baki Slot Sedang Menunggu Imbasan QR';
+        qrPanel.style.display = 'block';
+        fullBox.style.display = 'none';
+
+        if (currentQr && currentQr.qrDataUrl) {
+          const existingImg = qrBox.querySelector('img');
+          if (!existingImg || existingImg.src !== currentQr.qrDataUrl) {
+            qrBox.innerHTML = '<img src="' + currentQr.qrDataUrl + '" alt="WhatsApp QR Code" />';
+          }
+          qrCountdown.textContent = formatDuration(computeRemainingSec(currentQr.qrExpiresAt));
         } else {
-          btn.disabled = false;
-          btn.textContent = '📱 Jana QR Code Baharu (Link Device)';
+          if (!qrBox.querySelector('.qr-loading')) {
+            qrBox.innerHTML =
+              '<div class="qr-loading"><div class="spinner"></div><span>Menyediakan QR WhatsApp...</span></div>';
+          }
+          qrCountdown.textContent = 'Menjana...';
         }
+
+        btn.disabled = isRegenerating;
+        btn.textContent = isRegenerating ? '⏳ Menjana Semula QR Code...' : '🔄 Jana Semula QR Code';
       }
 
+      const activeUsers = st.sessions.filter(
+        (s) => s.status === 'connected' || s.status === 'reconnecting'
+      );
       const usersContainer = document.getElementById('usersContainer');
-      if (!st.sessions.length) {
+      if (!activeUsers.length) {
         usersContainer.innerHTML =
-          '<div class="empty-state">Tiada pengguna aktif buat masa ini. Klik <strong>Jana QR Code Baharu</strong> untuk mula.</div>';
+          '<div class="empty-state">Belum ada pengguna yang tersambung. Imbas QR Code di atas untuk mula.</div>';
       } else {
-        const rows = st.sessions
+        const rows = activeUsers
           .map((s, idx) => {
-            const isConn = s.status === 'connected' || s.status === 'reconnecting';
-            const badgeClass = s.status;
-            const statusText =
-              s.status === 'connected'
-                ? '✅ Aktif'
-                : s.status === 'reconnecting'
-                ? '🔄 Sambung Semula'
-                : s.status === 'qr'
-                ? '📱 Imbas QR'
-                : '⏳ Memulakan';
-
-            const displayName = s.name || (isConn ? 'Pengguna WhatsApp' : 'Menunggu Imbasan QR');
+            const statusText = s.status === 'connected' ? '✅ Aktif' : '🔄 Sambung Semula';
+            const displayName = s.name || 'Pengguna WhatsApp';
             const displayPhone = s.phone ? '+' + s.phone : s.id;
-            const labelForConfirm = s.phone ? '+' + s.phone : s.id;
-
-            const remSec = isConn
-              ? computeRemainingSec(s.expiresAt)
-              : computeRemainingSec(s.qrExpiresAt);
+            const remSec = computeRemainingSec(s.expiresAt);
             const cdClass =
               remSec == null
                 ? ''
@@ -623,10 +585,6 @@ function renderDashboardHtml(initialState) {
                 ? 'warn'
                 : '';
 
-            const timeInfo = isConn
-              ? formatClock(s.connectedAt) + ' → ' + formatClock(s.expiresAt)
-              : 'QR tamat: ' + formatClock(s.qrExpiresAt);
-
             return (
               '<tr>' +
               '<td><strong>#' + (idx + 1) + '</strong></td>' +
@@ -634,14 +592,14 @@ function renderDashboardHtml(initialState) {
                 '<div class="user-name">' + escapeHtml(displayName) + '</div>' +
                 '<div class="user-phone">' + escapeHtml(displayPhone) + '</div>' +
               '</td>' +
-              '<td><span class="badge ' + escapeHtml(badgeClass) + '">' + statusText + '</span></td>' +
-              '<td style="font-size:0.82rem;color:#cbd5e1;">' + escapeHtml(timeInfo) + '</td>' +
+              '<td><span class="badge ' + escapeHtml(s.status) + '">' + statusText + '</span></td>' +
+              '<td style="font-size:0.82rem;color:#cbd5e1;">' +
+                escapeHtml(formatClock(s.connectedAt) + ' → ' + formatClock(s.expiresAt)) +
+              '</td>' +
               '<td><span class="countdown ' + cdClass + '">' + formatDuration(remSec) + '</span></td>' +
-              '<td>' + (isConn ? s.messagesHandled : '-') + '</td>' +
+              '<td>' + s.messagesHandled + '</td>' +
               '<td>' +
-                '<button class="btn btn-danger" onclick="logoutUser(\'' + escapeHtml(s.id) + '\', \'' + escapeHtml(labelForConfirm) + '\')">' +
-                  (isConn ? 'Log Keluar' : 'Batal') +
-                '</button>' +
+                '<button class="btn btn-danger" onclick="logoutUser(\'' + escapeHtml(s.id) + '\', \'' + escapeHtml(displayPhone) + '\')">Log Keluar</button>' +
               '</td>' +
               '</tr>'
             );
@@ -667,20 +625,32 @@ function renderDashboardHtml(initialState) {
         'Dikemas kini: ' + formatClock(st.updatedAt);
     }
 
+    function scheduleNextPoll() {
+      if (pollTimer) clearTimeout(pollTimer);
+      const needsFastPoll =
+        latestState &&
+        latestState.connectedCount < latestState.maxSessions &&
+        !latestState.sessions.some((s) => s.status === 'qr' && s.qrDataUrl);
+      const delay = needsFastPoll ? 400 : 1500;
+      pollTimer = setTimeout(fetchState, delay);
+    }
+
     async function fetchState() {
       try {
-        const res = await fetch(apiUrl('/api/sessions'));
+        const res = await fetch('/api/sessions');
         if (res.ok) {
           latestState = await res.json();
           renderUi();
         }
       } catch {
         // Retry on next poll
+      } finally {
+        scheduleNextPoll();
       }
     }
 
+    renderUi();
     fetchState();
-    setInterval(fetchState, 2000);
     setInterval(renderUi, 1000);
   </script>
 </body>
@@ -688,15 +658,14 @@ function renderDashboardHtml(initialState) {
 }
 
 export function startQrServer(port, sessionManager = null) {
-  const manager = sessionManager || new SessionManager();
+  const manager = sessionManager || new SessionManager({ autoGenerateQr: false });
 
   const server = http.createServer(async (req, res) => {
     try {
       const parsedUrl = new URL(req.url || '/', 'http://localhost');
       const pathname = parsedUrl.pathname;
-      const isApiRoute = pathname.startsWith('/api/') || pathname === '/status';
 
-      // Health check endpoint for Render & UptimeRobot (supports GET & HEAD, no secret required)
+      // Health check endpoint for Render & UptimeRobot (supports GET & HEAD)
       if (pathname === '/health') {
         res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
         if (req.method === 'HEAD') {
@@ -725,26 +694,39 @@ export function startQrServer(port, sessionManager = null) {
         return;
       }
 
-      // Optional secret key protection for public cloud deployments (e.g. Render)
-      if (config.qrSecret) {
-        const providedKey =
-          parsedUrl.searchParams.get('key') ||
-          String(req.headers['x-qr-secret'] || '');
-        if (providedKey !== config.qrSecret) {
-          if (isApiRoute) {
-            sendJson(res, 403, { ok: false, error: 'Akses ditolak: kata laluan tidak sah.' });
-            return;
-          }
-          res.writeHead(403, { 'Content-Type': 'text/html; charset=utf-8' });
-          res.end(
-            '<!DOCTYPE html><html lang="ms"><body style="font-family:sans-serif;background:#0f172a;color:#f8fafc;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0"><div style="text-align:center"><h2>🔒 Akses Terhad</h2><p>Sila buka halaman ini dengan parameter <code>?key=KATA_LALUAN_ANDA</code>.</p></div></body></html>'
-          );
-          return;
+      // Auto-ensure standby QR is ready when viewing portal or polling sessions
+      if (
+        (pathname === '/' || pathname === '/api/sessions') &&
+        req.method === 'GET' &&
+        manager.autoGenerateQr
+      ) {
+        const counts = manager.getCounts();
+        if (counts.connectedCount < manager.maxSessions && counts.pendingCount === 0) {
+          await Promise.race([
+            manager.ensureStandbyQr(),
+            new Promise((r) => setTimeout(r, 120)),
+          ]);
         }
       }
 
       if (pathname === '/status' || (pathname === '/api/sessions' && req.method === 'GET')) {
         sendJson(res, 200, manager.getPublicState());
+        return;
+      }
+
+      if (pathname === '/api/sessions/regenerate' && req.method === 'POST') {
+        try {
+          const body = await readJsonBody(req);
+          const session = await manager.regenerateQr(body.replaceId || null);
+          sendJson(res, 201, { ok: true, session });
+        } catch (err) {
+          const status = err.statusCode || 500;
+          sendJson(res, status, {
+            ok: false,
+            code: err.code || 'REGENERATE_FAILED',
+            error: err.message,
+          });
+        }
         return;
       }
 
@@ -802,8 +784,7 @@ export function startQrServer(port, sessionManager = null) {
 
   server.listen(port, '0.0.0.0', () => {
     const baseUrl = config.publicUrl || `http://localhost:${port}`;
-    const suffix = config.qrSecret ? '/?key=***' : '';
-    console.log(`[QR Web] Portal Multi-Pengguna aktif pada port ${port} -> ${baseUrl}${suffix}`);
+    console.log(`[QR Web] Portal Multi-Pengguna aktif pada port ${port} -> ${baseUrl}`);
     console.log(
       `[QR Web] Had maksima: ${manager.maxSessions} pengguna serentak | Auto-logout: ${Math.round(manager.sessionDurationMs / 60000)} minit`
     );
