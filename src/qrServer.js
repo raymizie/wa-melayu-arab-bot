@@ -469,8 +469,11 @@ function renderDashboardHtml(initialState) {
         const data = await res.json();
         if (!res.ok || !data.ok) {
           showNotice('error', data.error || 'Gagal menjana semula QR Code.');
-        } else {
+        } else if (data.session) {
           activeQrId = data.session.id;
+          if (data.session.qrDataUrl) {
+            qrBox.innerHTML = '<img src="' + data.session.qrDataUrl + '" alt="WhatsApp QR Code" />';
+          }
         }
       } catch (err) {
         showNotice('error', 'Ralat sambungan ke pelayan: ' + err.message);
@@ -555,7 +558,10 @@ function renderDashboardHtml(initialState) {
             qrBox.innerHTML =
               '<div class="qr-loading"><div class="spinner"></div><span>Menyediakan QR WhatsApp...</span></div>';
           }
-          qrCountdown.textContent = 'Menjana...';
+          qrCountdown.textContent =
+            currentQr && currentQr.lastError
+              ? 'Menyambung semula (' + currentQr.lastError + ')...'
+              : 'Menjana...';
         }
 
         btn.disabled = isRegenerating;
@@ -702,10 +708,19 @@ export function startQrServer(port, sessionManager = null) {
       ) {
         const counts = manager.getCounts();
         if (counts.connectedCount < manager.maxSessions && counts.pendingCount === 0) {
-          await Promise.race([
+          const standby = await Promise.race([
             manager.ensureStandbyQr(),
-            new Promise((r) => setTimeout(r, 120)),
+            new Promise((r) => setTimeout(() => r(null), 500)),
           ]);
+          if (pathname === '/' && standby && !standby.qrDataUrl) {
+            await manager.waitForQr(standby.id, 2000);
+          }
+        } else if (pathname === '/' && counts.pendingCount > 0) {
+          const st = manager.getPublicState();
+          const starting = st.sessions.find((s) => s.status === 'starting');
+          if (starting) {
+            await manager.waitForQr(starting.id, 2000);
+          }
         }
       }
 
@@ -717,8 +732,9 @@ export function startQrServer(port, sessionManager = null) {
       if (pathname === '/api/sessions/regenerate' && req.method === 'POST') {
         try {
           const body = await readJsonBody(req);
-          const session = await manager.regenerateQr(body.replaceId || null);
-          sendJson(res, 201, { ok: true, session });
+          const created = await manager.regenerateQr(body.replaceId || null);
+          const ready = (await manager.waitForQr(created.id, 3000)) || created;
+          sendJson(res, 201, { ok: true, session: ready });
         } catch (err) {
           const status = err.statusCode || 500;
           sendJson(res, status, {

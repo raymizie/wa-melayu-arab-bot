@@ -3,6 +3,7 @@ import path from 'path';
 import makeWASocket, {
   DisconnectReason,
   fetchLatestBaileysVersion,
+  fetchLatestWaWebVersion,
   useMultiFileAuthState,
   Browsers,
 } from '@whiskeysockets/baileys';
@@ -12,36 +13,53 @@ import { config } from './config.js';
 import { handleIncomingMessage } from './handlers/messageHandler.js';
 
 const silentLogger = pino({ level: 'silent' });
-const FALLBACK_WA_VERSION = [2, 3000, 1020608496];
+// Verified live WhatsApp Web version fallback (never use outdated 2024/2025 versions that cause HTTP 405 loops)
+const FALLBACK_WA_VERSION = [2, 3000, 1056062441];
 const VERSION_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 
 let cachedWaVersion = null;
 let cachedWaVersionAt = 0;
 let versionFetchPromise = null;
 
-async function getSafeBaileysVersion() {
-  if (cachedWaVersion && Date.now() - cachedWaVersionAt < VERSION_CACHE_TTL_MS) {
+async function fetchLiveWaVersion() {
+  // Primary: fetch directly from web.whatsapp.com/sw.js (always up-to-date & fast)
+  try {
+    const waWeb = await withTimeout(fetchLatestWaWebVersion({ timeout: 4500 }), 5000);
+    if (waWeb?.isLatest && Array.isArray(waWeb.version) && waWeb.version.length === 3) {
+      return { version: waWeb.version, isLatest: true, source: 'wa-web' };
+    }
+  } catch {
+    // Fall through to Baileys GitHub check
+  }
+
+  // Secondary: fetch from WhiskeySockets/Baileys repo
+  try {
+    const baileys = await withTimeout(fetchLatestBaileysVersion({ timeout: 4500 }), 5000);
+    if (baileys?.isLatest && Array.isArray(baileys.version) && baileys.version.length === 3) {
+      return { version: baileys.version, isLatest: true, source: 'baileys-github' };
+    }
+  } catch {
+    // Fall through to verified fallback
+  }
+
+  return { version: FALLBACK_WA_VERSION, isLatest: false, source: 'fallback' };
+}
+
+async function getSafeBaileysVersion(forceRefresh = false) {
+  if (!forceRefresh && cachedWaVersion && Date.now() - cachedWaVersionAt < VERSION_CACHE_TTL_MS) {
     return cachedWaVersion;
   }
   if (!versionFetchPromise) {
-    versionFetchPromise = Promise.race([
-      fetchLatestBaileysVersion(),
-      new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Timeout fetchLatestBaileysVersion')), 2500)
-      ),
-    ])
+    versionFetchPromise = fetchLiveWaVersion()
       .then((result) => {
-        cachedWaVersion = result.version;
-        cachedWaVersionAt = Date.now();
-        return cachedWaVersion;
-      })
-      .catch((err) => {
-        console.warn(`[WA] Guna versi fallback (${err.message})`);
-        if (!cachedWaVersion) {
-          cachedWaVersion = FALLBACK_WA_VERSION;
+        if (result.isLatest) {
+          cachedWaVersion = result.version;
           cachedWaVersionAt = Date.now();
+          console.log(`[WA] Versi WhatsApp Web (${result.source}): v${result.version.join('.')}`);
+        } else {
+          console.warn(`[WA] Guna versi fallback sementara: v${result.version.join('.')}`);
         }
-        return cachedWaVersion;
+        return result.version;
       })
       .finally(() => {
         versionFetchPromise = null;
@@ -143,9 +161,39 @@ export class SessionManager {
       qrRemainingSeconds,
       lastActiveAt: s.lastActiveAt ? new Date(s.lastActiveAt).toISOString() : null,
       messagesHandled: s.messagesHandled,
+      lastError: s.lastError || null,
       hasQr: Boolean(s.qrDataUrl),
       qrDataUrl: s.status === 'qr' ? s.qrDataUrl : null,
     };
+  }
+
+  waitForQr(id, timeoutMs = 2500) {
+    const s = this.sessions.get(id);
+    if (!s || s.closing || s.qrDataUrl || s.connectedAt) {
+      return Promise.resolve(this.getSessionPublic(id));
+    }
+    return new Promise((resolve) => {
+      const done = () => {
+        clearTimeout(timer);
+        if (s.qrWaiters) s.qrWaiters.delete(done);
+        resolve(this.getSessionPublic(id));
+      };
+      const timer = setTimeout(done, timeoutMs);
+      if (!s.qrWaiters) s.qrWaiters = new Set();
+      s.qrWaiters.add(done);
+    });
+  }
+
+  _notifyQrWaiters(session) {
+    if (!session.qrWaiters || session.qrWaiters.size === 0) return;
+    for (const fn of Array.from(session.qrWaiters)) {
+      try {
+        fn();
+      } catch {
+        // ignore
+      }
+    }
+    session.qrWaiters.clear();
   }
 
   getPublicState() {
@@ -349,6 +397,8 @@ export class SessionManager {
       expiresAt: null,
       lastActiveAt: null,
       messagesHandled: 0,
+      lastError: null,
+      qrWaiters: new Set(),
       sock: null,
       pendingTimer: null,
       expiryTimer: null,
@@ -417,10 +467,12 @@ export class SessionManager {
         }
         session.status = 'qr';
         session.qrString = qr;
+        session.lastError = null;
         Promise.resolve(this.qrToDataUrl(qr))
           .then((url) => {
             if (!session.closing && session.status === 'qr') {
               session.qrDataUrl = url;
+              this._notifyQrWaiters(session);
             }
           })
           .catch((err) => {
@@ -480,6 +532,8 @@ export class SessionManager {
         session.phone = phone;
         session.lid = lid;
         session.name = name || null;
+        session.lastError = null;
+        this._notifyQrWaiters(session);
 
         this._saveMeta(session);
         this._scheduleExpiry(session);
@@ -498,6 +552,7 @@ export class SessionManager {
 
       if (connection === 'close') {
         const statusCode = lastDisconnect?.error?.output?.statusCode;
+        const errMsg = lastDisconnect?.error?.message || '';
         const isLoggedOut = statusCode === DisconnectReason.loggedOut;
 
         if (isLoggedOut) {
@@ -513,11 +568,22 @@ export class SessionManager {
           return;
         }
 
+        // Code 405 means WhatsApp rejected the cached WA Web version -> invalidate cache immediately!
+        if (statusCode === 405) {
+          cachedWaVersion = null;
+          cachedWaVersionAt = 0;
+        }
+
+        session.lastError = statusCode
+          ? `Kod ${statusCode}${errMsg ? `: ${errMsg}` : ''}`
+          : errMsg || null;
+
         if (session.connectedAt) {
           session.status = 'reconnecting';
         }
 
-        const delayMs = statusCode === DisconnectReason.restartRequired ? 500 : 3000;
+        const delayMs =
+          statusCode === DisconnectReason.restartRequired || statusCode === 405 ? 500 : 2000;
         console.log(
           `[Session ${session.id}] Sambungan terputus (kod: ${statusCode || 'unknown'}). Menyambung semula dalam ${delayMs}ms...`
         );
@@ -612,6 +678,7 @@ export class SessionManager {
     if (!session || session.closing) return false;
 
     session.closing = true;
+    this._notifyQrWaiters(session);
     this.sessions.delete(id);
 
     if (session.pendingTimer) {
