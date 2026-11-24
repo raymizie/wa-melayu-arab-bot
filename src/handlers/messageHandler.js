@@ -168,6 +168,7 @@ function buildMenuText(prefs) {
     '• `/suara` — Pilih 8 suara & loghat Arab (Saudi/Mesir/UAE/Jordan)',
     '• `/laju <perlahan|biasa|laju>` — Laras kelajuan suara Arab',
     '• `/auto on` / `/auto off` — Hidupkan/matikan auto-terjemah untuk chat ini sahaja (lalai: MATI)',
+    '• `/masa` — Semak baki tempoh sesi aktif anda',
     '• `/model` — Semak status auto-pilih model Gemini & enjin fallback',
     '',
     `🎙️ *Tetapan Semasa:*`,
@@ -461,6 +462,30 @@ export async function handleIncomingMessage(sock, msg, context = {}) {
     if (cmd === 'menu' || cmd === 'help' || cmd === 'start' || cmd === 'bantuan') {
       context.onHandled?.();
       await sendText(sock, jid, buildMenuText(prefs), msg, ownerKey);
+      return;
+    }
+
+    if (cmd === 'masa' || cmd === 'time' || cmd === 'baki') {
+      context.onHandled?.();
+      const sInfo = context.getSessionInfo?.();
+      if (!sInfo || sInfo.remainingSeconds == null) {
+        await sendText(sock, jid, '⏱️ Sesi aktif tanpa had masa ditetapkan.', msg, ownerKey);
+        return;
+      }
+      const mins = Math.floor(sInfo.remainingSeconds / 60);
+      const secs = sInfo.remainingSeconds % 60;
+      const expTime = new Date(sInfo.expiresAt).toLocaleTimeString('ms-MY', {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+      });
+      await sendText(
+        sock,
+        jid,
+        `⏱️ *Baki Tempoh Sesi Anda:* ${mins} minit ${secs} saat\n🔒 Auto-logout pada: *${expTime}*`,
+        msg,
+        ownerKey
+      );
       return;
     }
 

@@ -32,166 +32,174 @@ function readJsonBody(req) {
 export function renderDashboardHtml(initialState) {
   const maxSessions = initialState.maxSessions;
   const durationMins = initialState.sessionDurationMinutes;
+  const connectedInit = initialState.connectedCount || 0;
+  const freeInit = Math.max(0, maxSessions - connectedInit);
+  const nextSlot = Math.min(maxSessions, connectedInit + 1);
   const safeInitialJson = JSON.stringify(initialState).replace(/</g, '\\u003c');
   const initialQr = (initialState.sessions || []).find((s) => s.status === 'qr' && s.qrDataUrl);
   const initialQrHtml = initialQr
-    ? `<img src="${initialQr.qrDataUrl}" alt="WhatsApp QR Code" />`
-    : `<div class="qr-loading"><div class="spinner"></div><span>Menjana QR Code...</span></div>`;
+    ? `<img src="${initialQr.qrDataUrl}" alt="Kod QR WhatsApp" />`
+    : `<div class="qr-loading"><div class="spinner"></div><span>Menjana Kod QR...</span></div>`;
 
   return `<!DOCTYPE html>
 <html lang="ms">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Bot WhatsApp Melayu ↔ Arab (${maxSessions} Pengguna)</title>
+  <title>Bot Melayu ↔ Arab WhatsApp</title>
   <style>
     :root {
-      --bg: #0f172a;
-      --card: #1e293b;
-      --card-dark: #0f172a;
-      --border: #334155;
-      --text: #f8fafc;
+      --bg: #0b1120;
+      --surface: #141d2e;
+      --surface-soft: #0f172a;
+      --pill-bg: #162033;
+      --border: #243247;
+      --border-dashed: #2d3e56;
+      --text: #f1f5f9;
       --muted: #94a3b8;
-      --primary: #2563eb;
-      --primary-hover: #1d4ed8;
-      --green: #16a34a;
-      --amber: #f59e0b;
-      --red: #dc2626;
+      --muted-dim: #64748b;
+      --accent: #38bdf8;
+      --amber-bg: #6b4415;
+      --amber-text: #fbbf24;
+      --amber-border: rgba(245, 158, 11, 0.35);
+      --green: #4ade80;
+      --red: #f87171;
     }
     * { box-sizing: border-box; }
     body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background: var(--bg);
       color: var(--text);
       min-height: 100vh;
       margin: 0;
-      padding: 24px 16px 48px;
+      padding: 28px 18px 48px;
     }
     .container {
-      max-width: 920px;
+      max-width: 980px;
       margin: 0 auto;
-      display: flex;
-      flex-direction: column;
-      gap: 20px;
     }
-    .header { text-align: center; }
-    .header h1 { font-size: 1.6rem; margin: 0 0 6px; }
-    .header .sub { color: var(--muted); font-size: 0.94rem; margin: 0; }
-    .grid {
+    .header {
+      text-align: center;
+      margin-bottom: 24px;
+    }
+    .header h1 {
+      font-size: 1.75rem;
+      font-weight: 700;
+      color: var(--accent);
+      margin: 0 0 14px;
+      letter-spacing: -0.01em;
+    }
+    .top-pills {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 10px;
+    }
+    .top-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      background: var(--pill-bg);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 7px 16px;
+      font-size: 0.86rem;
+      color: #cbd5e1;
+    }
+    .top-pill strong {
+      color: var(--accent);
+      font-weight: 700;
+    }
+    .dot-green {
+      width: 11px;
+      height: 11px;
+      border-radius: 50%;
+      background: radial-gradient(circle at 35% 35%, #86efac, #16a34a);
+      display: inline-block;
+      box-shadow: 0 0 6px rgba(74, 222, 128, 0.45);
+    }
+    .layout {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+      grid-template-columns: 372px 1fr;
       gap: 20px;
+      align-items: start;
+    }
+    @media (max-width: 820px) {
+      .layout {
+        grid-template-columns: 1fr;
+      }
     }
     .card {
-      background: var(--card);
+      background: var(--surface);
       border: 1px solid var(--border);
-      border-radius: 18px;
-      padding: 22px;
-      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+      border-radius: 14px;
+      padding: 22px 24px;
+      box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
     }
-    .card h2 {
-      font-size: 1.08rem;
-      margin: 0 0 14px;
+    .card-title {
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: #f8fafc;
+      margin: 0 0 16px;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 8px;
-    }
-    .stats-row {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
       gap: 10px;
-      margin-bottom: 14px;
     }
-    .stat {
-      background: var(--card-dark);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 12px 10px;
+    .card-title .slot-sub {
+      font-size: 0.84rem;
+      font-weight: 600;
+      color: var(--muted);
+    }
+    .qr-section {
       text-align: center;
     }
-    .stat .val { font-size: 1.45rem; font-weight: 700; display: block; }
-    .stat .lbl { font-size: 0.78rem; color: var(--muted); }
-    .progress-wrap {
-      background: var(--card-dark);
-      border-radius: 999px;
-      height: 10px;
-      overflow: hidden;
-      margin-bottom: 16px;
-      border: 1px solid var(--border);
-    }
-    .progress-bar {
-      height: 100%;
-      background: linear-gradient(90deg, #16a34a, #22c55e);
-      width: 0%;
-      transition: width 0.3s ease;
-    }
-    .progress-bar.full { background: linear-gradient(90deg, #dc2626, #ef4444); }
-    .btn {
+    .status-pill {
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      gap: 8px;
-      border: none;
-      border-radius: 12px;
-      padding: 11px 16px;
-      font-weight: 600;
-      font-size: 0.92rem;
-      cursor: pointer;
-      transition: background 0.15s, opacity 0.15s;
+      gap: 7px;
+      padding: 6px 18px;
+      border-radius: 999px;
+      font-size: 0.83rem;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      background: var(--amber-bg);
+      color: var(--amber-text);
+      border: 1px solid var(--amber-border);
+      margin-bottom: 18px;
     }
-    .btn-primary {
-      background: var(--primary);
-      color: #fff;
-      width: 100%;
-    }
-    .btn-primary:hover:not(:disabled) { background: var(--primary-hover); }
-    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
-    .btn-danger {
-      background: #dc262622;
+    .status-pill.full {
+      background: rgba(153, 27, 27, 0.45);
       color: #fca5a5;
-      border: 1px solid #dc262666;
-      padding: 6px 12px;
-      font-size: 0.82rem;
-      border-radius: 9px;
+      border-color: rgba(248, 113, 113, 0.4);
     }
-    .btn-danger:hover { background: #dc262644; color: #fff; }
-    .alert {
-      border-radius: 12px;
-      padding: 12px 14px;
-      font-size: 0.88rem;
-      margin-bottom: 14px;
-      display: none;
-      line-height: 1.5;
+    .qr-instr {
+      font-size: 0.89rem;
+      color: #cbd5e1;
+      line-height: 1.55;
+      margin: 0 auto 16px;
+      max-width: 310px;
     }
-    .alert.show { display: block; }
-    .alert.success {
-      background: #16a34a22;
-      border: 1px solid #16a34a66;
-      color: #86efac;
+    .qr-instr strong {
+      color: #f8fafc;
     }
-    .alert.error {
-      background: #dc262622;
-      border: 1px solid #dc262666;
-      color: #fca5a5;
-    }
-    .alert.info {
-      background: #2563eb22;
-      border: 1px solid #2563eb66;
-      color: #93c5fd;
-    }
-    .qr-panel { text-align: center; margin-bottom: 12px; }
     .qr-box {
       background: #ffffff;
-      border-radius: 16px;
-      padding: 14px;
+      border-radius: 14px;
+      padding: 12px;
       display: inline-block;
-      margin: 4px 0 10px;
+      margin: 0 auto 14px;
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
     }
-    .qr-box img { display: block; width: 240px; height: 240px; }
+    .qr-box img {
+      display: block;
+      width: 248px;
+      height: 248px;
+    }
     .qr-loading {
-      width: 240px;
-      height: 240px;
+      width: 248px;
+      height: 248px;
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -199,200 +207,283 @@ export function renderDashboardHtml(initialState) {
       gap: 10px;
       color: #334155;
       font-weight: 600;
-      font-size: 0.9rem;
+      font-size: 0.88rem;
     }
     .spinner {
-      width: 34px;
-      height: 34px;
-      border: 4px solid #cbd5e1;
+      width: 32px;
+      height: 32px;
+      border: 3.5px solid #cbd5e1;
       border-top-color: #2563eb;
       border-radius: 50%;
       animation: spin 0.8s linear infinite;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
-    .full-box {
-      background: #dc262618;
-      border: 1px solid #dc262655;
-      border-radius: 14px;
-      padding: 20px 16px;
-      text-align: center;
-      color: #fca5a5;
-      margin-bottom: 12px;
-      font-size: 0.92rem;
+    .qr-note {
+      font-size: 0.83rem;
+      color: var(--muted);
+      line-height: 1.55;
+      margin: 0 auto 12px;
+      max-width: 310px;
     }
-    .steps {
-      text-align: left;
-      background: var(--card-dark);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 12px 16px;
-      font-size: 0.85rem;
-      color: #cbd5e1;
-      line-height: 1.6;
+    .qr-note strong {
+      color: #e2e8f0;
     }
-    .steps ol, .steps ul { margin: 6px 0 0; padding-left: 18px; }
-    .badge {
+    .qr-subnote {
+      font-size: 0.82rem;
+      color: var(--muted-dim);
+      line-height: 1.5;
+      margin: 0 auto 16px;
+      max-width: 310px;
+    }
+    .btn-regen {
       display: inline-flex;
       align-items: center;
-      gap: 5px;
-      padding: 4px 10px;
-      border-radius: 999px;
-      font-size: 0.78rem;
+      justify-content: center;
+      gap: 7px;
+      background: #233044;
+      color: #f1f5f9;
+      border: 1px solid #33455e;
+      border-radius: 9px;
+      padding: 9px 18px;
+      font-size: 0.86rem;
       font-weight: 600;
-      white-space: nowrap;
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s, opacity 0.15s;
     }
-    .badge.connected {
-      background: #16a34a22;
-      color: #4ade80;
-      border: 1px solid #16a34a55;
+    .btn-regen:hover:not(:disabled) {
+      background: #2d3e57;
+      border-color: #475d7d;
     }
-    .badge.qr, .badge.starting {
-      background: #2563eb22;
-      color: #60a5fa;
-      border: 1px solid #2563eb55;
+    .btn-regen:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
     }
-    .badge.reconnecting {
-      background: #f59e0b22;
-      color: #fbbf24;
-      border: 1px solid #f59e0b55;
-    }
-    .table-wrap { overflow-x: auto; }
-    table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
-    th, td {
+    .alert {
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-size: 0.84rem;
+      margin-bottom: 14px;
+      display: none;
+      line-height: 1.45;
       text-align: left;
-      padding: 11px 10px;
-      border-bottom: 1px solid var(--border);
-      vertical-align: middle;
     }
-    th {
+    .alert.show { display: block; }
+    .alert.success {
+      background: rgba(22, 163, 74, 0.16);
+      border: 1px solid rgba(74, 222, 128, 0.35);
+      color: #86efac;
+    }
+    .alert.error {
+      background: rgba(220, 38, 38, 0.16);
+      border: 1px solid rgba(248, 113, 113, 0.35);
+      color: #fca5a5;
+    }
+    .alert.info {
+      background: rgba(56, 189, 248, 0.14);
+      border: 1px solid rgba(56, 189, 248, 0.35);
+      color: #7dd3fc;
+    }
+    .full-box {
+      background: rgba(153, 27, 27, 0.2);
+      border: 1px dashed rgba(248, 113, 113, 0.45);
+      border-radius: 12px;
+      padding: 26px 16px;
+      margin-bottom: 14px;
+      color: #fca5a5;
+      font-size: 0.9rem;
+      line-height: 1.55;
+    }
+    .empty-box {
+      border: 1px dashed var(--border-dashed);
+      border-radius: 11px;
+      padding: 28px 18px;
+      text-align: center;
+      background: rgba(11, 17, 32, 0.32);
+    }
+    .empty-box .empty-main {
       color: var(--muted);
-      font-weight: 600;
-      font-size: 0.8rem;
-      text-transform: uppercase;
-      letter-spacing: 0.03em;
+      font-size: 0.93rem;
+      margin: 0 0 6px;
     }
-    tr:last-child td { border-bottom: none; }
-    .user-name { font-weight: 600; color: #f8fafc; }
-    .user-phone { font-size: 0.82rem; color: var(--muted); font-family: monospace; }
+    .empty-box .empty-sub {
+      color: var(--muted-dim);
+      font-size: 0.83rem;
+      margin: 0;
+    }
+    .users-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .user-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      background: var(--surface-soft);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px 14px;
+      flex-wrap: wrap;
+    }
+    .user-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-width: 180px;
+    }
+    .slot-num {
+      width: 30px;
+      height: 30px;
+      border-radius: 8px;
+      background: #1d2b42;
+      border: 1px solid #2e415e;
+      color: var(--accent);
+      font-weight: 700;
+      font-size: 0.82rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .user-name {
+      font-weight: 600;
+      font-size: 0.92rem;
+      color: #f8fafc;
+    }
+    .user-meta {
+      font-size: 0.79rem;
+      color: var(--muted);
+      margin-top: 2px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+    .user-right {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-left: auto;
+    }
+    .time-block {
+      text-align: right;
+    }
     .countdown {
-      font-family: monospace;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
       font-weight: 700;
       font-size: 0.92rem;
-      color: #4ade80;
+      color: var(--accent);
+      display: block;
     }
-    .countdown.warn { color: #fbbf24; }
-    .countdown.danger { color: #f87171; }
-    .empty-state {
-      text-align: center;
-      padding: 28px 16px;
+    .countdown.warn { color: var(--amber-text); }
+    .countdown.danger { color: var(--red); }
+    .time-range {
+      font-size: 0.74rem;
+      color: var(--muted-dim);
+    }
+    .btn-logout {
+      background: rgba(220, 38, 38, 0.14);
+      color: #fca5a5;
+      border: 1px solid rgba(248, 113, 113, 0.35);
+      border-radius: 8px;
+      padding: 6px 11px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn-logout:hover {
+      background: rgba(220, 38, 38, 0.3);
+      color: #fff;
+    }
+    .divider {
+      border: none;
+      border-top: 1px solid var(--border);
+      margin: 18px 0 14px;
+    }
+    .tip-footer {
+      font-size: 0.83rem;
       color: var(--muted);
-      font-size: 0.92rem;
+      line-height: 1.65;
+      margin: 0;
     }
-    code {
-      background: #0f172a;
-      border: 1px solid #334155;
-      padding: 2px 6px;
+    .tip-footer strong {
+      color: #cbd5e1;
+    }
+    .tip-footer code {
+      background: #0d1627;
+      border: 1px solid #24354f;
+      color: var(--accent);
+      padding: 2px 7px;
       border-radius: 6px;
-      font-size: 0.84rem;
+      font-size: 0.8rem;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      white-space: nowrap;
     }
   </style>
 </head>
 <body>
   <div class="container">
     <div class="header">
-      <h1>🇲🇾 Bot WhatsApp Melayu ↔ Arab 🇸🇦</h1>
-      <p class="sub">
-        Sokongan Multi-Pengguna (Maksimum <strong>${maxSessions} orang serentak</strong>) •
-        Tempoh sesi <strong>${durationMins} minit</strong> (Auto-Logout) • Mod Panggil Sahaja
-      </p>
+      <h1>🇲🇾 Bot Melayu ↔ Arab WhatsApp</h1>
+      <div class="top-pills">
+        <span class="top-pill">👥 Pengguna Aktif: <strong id="topActiveCount">${connectedInit} / ${maxSessions}</strong></span>
+        <span class="top-pill"><span class="dot-green"></span> Slot Kosong: <strong id="topFreeSlots">${freeInit}</strong></span>
+        <span class="top-pill">⏱️ Had Masa: <strong>${durationMins} minit / sesi</strong></span>
+      </div>
     </div>
 
-    <div class="grid">
+    <div class="layout">
       <div class="card">
-        <h2>
-          <span>📱 Link Device (Auto QR)</span>
-          <span id="slotBadge" class="badge connected">0 / ${maxSessions} Aktif</span>
-        </h2>
+        <div class="card-title">Pautkan Peranti Baharu</div>
+        <div class="qr-section">
+          <div id="qrStatusPill" class="status-pill">⏳ IMBAS KOD QR (Slot #${nextSlot} / ${maxSessions})</div>
 
-        <div class="stats-row">
-          <div class="stat">
-            <span class="val" id="connectedCount">0</span>
-            <span class="lbl">Pengguna Aktif</span>
+          <div id="noticeBox" class="alert"></div>
+
+          <div id="qrActiveArea">
+            <p class="qr-instr">
+              Buka <strong>WhatsApp</strong> di telefon → <strong>Peranti Dipautkan (Linked Devices)</strong> → <strong>Pautkan Peranti</strong> → imbas QR di bawah:
+            </p>
+            <div class="qr-box" id="qrBox">
+              ${initialQrHtml}
+            </div>
+            <p class="qr-note" id="qrErrorLine" style="display:none; color:#fbbf24;"></p>
           </div>
-          <div class="stat">
-            <span class="val" id="pendingCount">0</span>
-            <span class="lbl">QR Sedia</span>
+
+          <div id="fullBox" class="full-box" style="display:none;">
+            <strong>🚫 Semua ${maxSessions} Slot Sedang Digunakan</strong><br/>
+            Sila tunggu sesi pengguna lain tamat tempoh (${durationMins} minit) atau log keluar.
           </div>
-          <div class="stat">
-            <span class="val" id="availableSlots">${maxSessions}</span>
-            <span class="lbl">Slot Kosong</span>
-          </div>
-        </div>
 
-        <div class="progress-wrap">
-          <div id="slotProgress" class="progress-bar"></div>
-        </div>
+          <p class="qr-note">
+            ⏱️ Tempoh aktif setiap pengguna ialah <strong>${durationMins} minit (1 jam)</strong> sebelum auto-logout.
+          </p>
+          <p class="qr-subnote">
+            Selepas anda berjaya imbas, kod QR baharu akan dijana untuk pengguna seterusnya.
+          </p>
 
-        <div id="noticeBox" class="alert"></div>
-
-        <div id="qrPanel" class="qr-panel">
-          <div class="qr-box" id="qrBox">
-            ${initialQrHtml}
-          </div>
-          <div id="qrTimerRow" style="font-size: 0.84rem; color: #94a3b8; margin-bottom: 10px;">
-            QR sah selama: <strong id="qrCountdown" style="color: #60a5fa;">--</strong>
-          </div>
-        </div>
-
-        <div id="fullBox" class="full-box" style="display:none;">
-          <strong>🚫 Slot Penuh (${maxSessions}/${maxSessions} Pengguna Aktif)</strong><br/>
-          Sila tunggu salah satu sesi tamat tempoh (1 jam) atau dilog keluar.
-        </div>
-
-        <button id="btnRegenerate" class="btn btn-primary" onclick="regenerateQr()">
-          🔄 Jana Semula QR Code
-        </button>
-
-        <div class="steps" style="margin-top: 14px;">
-          <strong>Cara Sambung:</strong>
-          <ol>
-            <li>Buka <strong>WhatsApp</strong> di telefon anda.</li>
-            <li>Tekan <strong>Settings / Tetapan</strong> → <strong>Linked Devices</strong>.</li>
-            <li>Tekan <strong>Link a Device</strong> dan imbas QR di atas.</li>
-            <li>Selepas tersambung, QR baharu dijana automatik untuk orang lain (maksimum ${maxSessions} serentak).</li>
-          </ol>
+          <button id="btnRegenerate" class="btn-regen" onclick="regenerateQr()">
+            🔄 Jana Semula Kod QR
+          </button>
         </div>
       </div>
 
       <div class="card">
-        <h2><span>ℹ️ Cara Guna Selepas Sambung</span></h2>
-        <div class="steps" style="margin-bottom: 14px;">
-          <strong>Mod Panggil Sahaja (Chat Peribadi &amp; Grup):</strong>
-          <ul>
-            <li>Bot <strong>tidak</strong> membalas mesej biasa secara automatik.</li>
-            <li>Taip <code>/arab &lt;teks Melayu&gt;</code> atau <em>reply</em> <code>/arab</code> pada mesej untuk terjemahan &amp; Voice Note Arab.</li>
-            <li><em>Reply</em> <code>/melayu</code> pada Voice Note / fail audio / teks Arab untuk terjemahan Melayu.</li>
-            <li>Taip <code>/suara</code> untuk pilih 8 loghat Arab, <code>/laju</code> untuk kelajuan suara, atau <code>/menu</code> untuk senarai penuh.</li>
-          </ul>
+        <div class="card-title">
+          <span>👥 Info Pengguna Aktif</span>
+          <span id="rightSlotSub" class="slot-sub">${connectedInit} daripada ${maxSessions} slot</span>
         </div>
-        <div class="steps">
-          <strong>Polisi Multi-Pengguna:</strong>
-          <ul>
-            <li>Sehingga <strong>${maxSessions} pengguna</strong> boleh menyambung WhatsApp serentak.</li>
-            <li>QR Code <strong>dijana secara automatik</strong> dan boleh dijana semula bila-bila masa dengan butang <strong>Jana Semula QR Code</strong>.</li>
-            <li>Setiap pengguna diberi tempoh <strong>${durationMins} minit</strong> selepas sambung dan akan <strong>log keluar automatik</strong> apabila tamat masa.</li>
-          </ul>
-        </div>
-      </div>
-    </div>
 
-    <div class="card">
-      <h2>
-        <span>👥 Maklumat Pengguna Semasa</span>
-        <span id="lastUpdated" style="font-size: 0.78rem; color: #94a3b8; font-weight: 400;">Dikemas kini</span>
-      </h2>
-      <div id="usersContainer" class="table-wrap">
-        <div class="empty-state">Memuatkan senarai pengguna...</div>
+        <div id="usersContainer">
+          <div class="empty-box">
+            <p class="empty-main">Tiada pengguna sedang bersambung buat masa ini.</p>
+            <p class="empty-sub">Imbas kod QR di sebelah untuk mula menggunakan Bot Melayu ↔ Arab.</p>
+          </div>
+        </div>
+
+        <hr class="divider" />
+
+        <p class="tip-footer">
+          <strong>Tip guna di WhatsApp:</strong> Taip <code>/arab Selamat pagi</code> atau <strong>Reply</strong> mana-mana teks dengan <code>/arab</code> untuk jana teks &amp; suara Arab, <strong>Reply</strong> <em>voice note</em> / teks Arab dengan <code>/melayu</code> untuk terjemahan Melayu, taip <code>/suara</code> untuk pilih loghat Arab, dan taip <code>/masa</code> untuk semak baki sesi.
+        </p>
       </div>
     </div>
   </div>
@@ -426,7 +517,6 @@ export function renderDashboardHtml(initialState) {
         return new Date(iso).toLocaleTimeString('ms-MY', {
           hour: '2-digit',
           minute: '2-digit',
-          second: '2-digit',
         });
       } catch {
         return iso;
@@ -456,10 +546,10 @@ export function renderDashboardHtml(initialState) {
 
       const btn = document.getElementById('btnRegenerate');
       btn.disabled = true;
-      btn.textContent = '⏳ Menjana Semula QR Code...';
+      btn.textContent = '⏳ Menjana Semula...';
 
       const qrBox = document.getElementById('qrBox');
-      qrBox.innerHTML = '<div class="qr-loading"><div class="spinner"></div><span>Menjana QR Baharu...</span></div>';
+      qrBox.innerHTML = '<div class="qr-loading"><div class="spinner"></div><span>Menjana Kod QR Baharu...</span></div>';
 
       try {
         const res = await fetch('/api/sessions/regenerate', {
@@ -469,11 +559,11 @@ export function renderDashboardHtml(initialState) {
         });
         const data = await res.json();
         if (!res.ok || !data.ok) {
-          showNotice('error', data.error || 'Gagal menjana semula QR Code.');
+          showNotice('error', data.error || 'Gagal menjana semula kod QR.');
         } else if (data.session) {
           activeQrId = data.session.id;
           if (data.session.qrDataUrl) {
-            qrBox.innerHTML = '<img src="' + data.session.qrDataUrl + '" alt="WhatsApp QR Code" />';
+            qrBox.innerHTML = '<img src="' + data.session.qrDataUrl + '" alt="Kod QR WhatsApp" />';
           }
         }
       } catch (err) {
@@ -503,25 +593,21 @@ export function renderDashboardHtml(initialState) {
     function renderUi() {
       if (!latestState) return;
       const st = latestState;
+      const freeSlots = Math.max(0, st.maxSessions - st.connectedCount);
+      const nextSlot = Math.min(st.maxSessions, st.connectedCount + 1);
 
-      document.getElementById('connectedCount').textContent = st.connectedCount;
-      document.getElementById('pendingCount').textContent = st.pendingCount;
-      document.getElementById('availableSlots').textContent = Math.max(0, st.maxSessions - st.connectedCount);
-      document.getElementById('slotBadge').textContent = st.connectedCount + ' / ' + st.maxSessions + ' Aktif';
+      document.getElementById('topActiveCount').textContent = st.connectedCount + ' / ' + st.maxSessions;
+      document.getElementById('topFreeSlots').textContent = String(freeSlots);
+      document.getElementById('rightSlotSub').textContent = st.connectedCount + ' daripada ' + st.maxSessions + ' slot';
 
-      const pct = Math.min(100, Math.round((st.connectedCount / st.maxSessions) * 100));
-      const bar = document.getElementById('slotProgress');
-      bar.style.width = pct + '%';
-      bar.className = 'progress-bar' + (st.connectedCount >= st.maxSessions ? ' full' : '');
-
-      // Check if previously displayed QR just connected!
+      // Check if previously displayed QR just connected
       if (activeQrId) {
         const prev = st.sessions.find((s) => s.id === activeQrId);
         if (prev && prev.status === 'connected') {
           const label = prev.name || (prev.phone ? '+' + prev.phone : 'Peranti');
           showNotice(
             'success',
-            '✅ ' + label + ' berjaya tersambung (' + st.sessionDurationMinutes + ' minit)! QR baharu untuk pengguna seterusnya dijana automatik.'
+            '✅ ' + label + ' berjaya tersambung! Kod QR baharu untuk pengguna seterusnya dijana automatik.'
           );
           activeQrId = null;
         }
@@ -530,43 +616,50 @@ export function renderDashboardHtml(initialState) {
       const pendingSessions = st.sessions.filter(
         (s) => s.status === 'qr' || s.status === 'starting'
       );
-      let currentQr = pendingSessions.find((s) => s.id === activeQrId) || pendingSessions[0] || null;
+      const currentQr = pendingSessions.find((s) => s.id === activeQrId) || pendingSessions[0] || null;
       if (currentQr) activeQrId = currentQr.id;
 
-      const qrPanel = document.getElementById('qrPanel');
+      const pill = document.getElementById('qrStatusPill');
+      const qrActiveArea = document.getElementById('qrActiveArea');
       const fullBox = document.getElementById('fullBox');
       const qrBox = document.getElementById('qrBox');
-      const qrCountdown = document.getElementById('qrCountdown');
+      const qrErrorLine = document.getElementById('qrErrorLine');
       const btn = document.getElementById('btnRegenerate');
 
       if (st.connectedCount >= st.maxSessions) {
-        qrPanel.style.display = 'none';
+        pill.className = 'status-pill full';
+        pill.textContent = '🚫 SLOT PENUH (' + st.connectedCount + ' / ' + st.maxSessions + ')';
+        qrActiveArea.style.display = 'none';
         fullBox.style.display = 'block';
         btn.disabled = true;
-        btn.textContent = '🚫 Slot Penuh (' + st.connectedCount + '/' + st.maxSessions + ' Aktif)';
+        btn.textContent = '🚫 Slot Penuh';
       } else {
-        qrPanel.style.display = 'block';
+        pill.className = 'status-pill';
+        pill.textContent = '⏳ IMBAS KOD QR (Slot #' + nextSlot + ' / ' + st.maxSessions + ')';
+        qrActiveArea.style.display = 'block';
         fullBox.style.display = 'none';
 
         if (currentQr && currentQr.qrDataUrl) {
           const existingImg = qrBox.querySelector('img');
           if (!existingImg || existingImg.src !== currentQr.qrDataUrl) {
-            qrBox.innerHTML = '<img src="' + currentQr.qrDataUrl + '" alt="WhatsApp QR Code" />';
+            qrBox.innerHTML = '<img src="' + currentQr.qrDataUrl + '" alt="Kod QR WhatsApp" />';
           }
-          qrCountdown.textContent = formatDuration(computeRemainingSec(currentQr.qrExpiresAt));
+          qrErrorLine.style.display = 'none';
         } else {
           if (!qrBox.querySelector('.qr-loading')) {
             qrBox.innerHTML =
-              '<div class="qr-loading"><div class="spinner"></div><span>Menyediakan QR WhatsApp...</span></div>';
+              '<div class="qr-loading"><div class="spinner"></div><span>Menjana Kod QR...</span></div>';
           }
-          qrCountdown.textContent =
-            currentQr && currentQr.lastError
-              ? 'Menyambung semula (' + currentQr.lastError + ')...'
-              : 'Menjana...';
+          if (currentQr && currentQr.lastError) {
+            qrErrorLine.style.display = 'block';
+            qrErrorLine.textContent = 'Menyambung semula (' + currentQr.lastError + ')...';
+          } else {
+            qrErrorLine.style.display = 'none';
+          }
         }
 
         btn.disabled = isRegenerating;
-        btn.textContent = isRegenerating ? '⏳ Menjana Semula QR Code...' : '🔄 Jana Semula QR Code';
+        btn.textContent = isRegenerating ? '⏳ Menjana Semula...' : '🔄 Jana Semula Kod QR';
       }
 
       const activeUsers = st.sessions.filter(
@@ -575,11 +668,13 @@ export function renderDashboardHtml(initialState) {
       const usersContainer = document.getElementById('usersContainer');
       if (!activeUsers.length) {
         usersContainer.innerHTML =
-          '<div class="empty-state">Belum ada pengguna yang tersambung. Imbas QR Code di atas untuk mula.</div>';
+          '<div class="empty-box">' +
+            '<p class="empty-main">Tiada pengguna sedang bersambung buat masa ini.</p>' +
+            '<p class="empty-sub">Imbas kod QR di sebelah untuk mula menggunakan Bot Melayu ↔ Arab.</p>' +
+          '</div>';
       } else {
         const rows = activeUsers
           .map((s, idx) => {
-            const statusText = s.status === 'connected' ? '✅ Aktif' : '🔄 Sambung Semula';
             const displayName = s.name || 'Pengguna WhatsApp';
             const displayPhone = s.phone ? '+' + s.phone : s.id;
             const remSec = computeRemainingSec(s.expiresAt);
@@ -591,45 +686,31 @@ export function renderDashboardHtml(initialState) {
                 : remSec <= 600
                 ? 'warn'
                 : '';
+            const statusTag = s.status === 'reconnecting' ? ' • Sambung semula' : '';
 
             return (
-              '<tr>' +
-              '<td><strong>#' + (idx + 1) + '</strong></td>' +
-              '<td>' +
-                '<div class="user-name">' + escapeHtml(displayName) + '</div>' +
-                '<div class="user-phone">' + escapeHtml(displayPhone) + '</div>' +
-              '</td>' +
-              '<td><span class="badge ' + escapeHtml(s.status) + '">' + statusText + '</span></td>' +
-              '<td style="font-size:0.82rem;color:#cbd5e1;">' +
-                escapeHtml(formatClock(s.connectedAt) + ' → ' + formatClock(s.expiresAt)) +
-              '</td>' +
-              '<td><span class="countdown ' + cdClass + '">' + formatDuration(remSec) + '</span></td>' +
-              '<td>' + s.messagesHandled + '</td>' +
-              '<td>' +
-                '<button class="btn btn-danger" data-id="' + escapeHtml(s.id) + '" data-label="' + escapeHtml(displayPhone) + '" onclick="logoutUser(this.dataset.id, this.dataset.label)">Log Keluar</button>' +
-              '</td>' +
-              '</tr>'
+              '<div class="user-row">' +
+                '<div class="user-left">' +
+                  '<div class="slot-num">#' + (idx + 1) + '</div>' +
+                  '<div>' +
+                    '<div class="user-name">' + escapeHtml(displayName) + '</div>' +
+                    '<div class="user-meta">' + escapeHtml(displayPhone) + ' • ' + s.messagesHandled + ' arahan' + escapeHtml(statusTag) + '</div>' +
+                  '</div>' +
+                '</div>' +
+                '<div class="user-right">' +
+                  '<div class="time-block">' +
+                    '<span class="countdown ' + cdClass + '">⏱️ ' + formatDuration(remSec) + '</span>' +
+                    '<span class="time-range">' + escapeHtml(formatClock(s.connectedAt) + ' – ' + formatClock(s.expiresAt)) + '</span>' +
+                  '</div>' +
+                  '<button class="btn-logout" data-id="' + escapeHtml(s.id) + '" data-label="' + escapeHtml(displayPhone) + '" onclick="logoutUser(this.dataset.id, this.dataset.label)">Log Keluar</button>' +
+                '</div>' +
+              '</div>'
             );
           })
           .join('');
 
-        usersContainer.innerHTML =
-          '<table>' +
-          '<thead><tr>' +
-          '<th>Slot</th>' +
-          '<th>Pengguna</th>' +
-          '<th>Status</th>' +
-          '<th>Masa Sesi</th>' +
-          '<th>Baki Masa</th>' +
-          '<th>Arahan</th>' +
-          '<th>Tindakan</th>' +
-          '</tr></thead>' +
-          '<tbody>' + rows + '</tbody>' +
-          '</table>';
+        usersContainer.innerHTML = '<div class="users-list">' + rows + '</div>';
       }
-
-      document.getElementById('lastUpdated').textContent =
-        'Dikemas kini: ' + formatClock(st.updatedAt);
     }
 
     function scheduleNextPoll() {

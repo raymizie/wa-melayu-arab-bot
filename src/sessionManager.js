@@ -610,6 +610,7 @@ export class SessionManager {
       for (const msg of messages) {
         this.onIncomingMessage(sock, msg, {
           sessionId: session.id,
+          getSessionInfo: () => this.serializeSession(session),
           onHandled: () => {
             session.messagesHandled += 1;
             session.lastActiveAt = Date.now();

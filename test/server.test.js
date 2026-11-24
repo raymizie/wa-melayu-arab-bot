@@ -23,8 +23,8 @@ try {
   const rootGet = await fetch(`http://127.0.0.1:${PORT}/`);
   assert.equal(rootGet.status, 200);
   const html = await rootGet.text();
-  assert.ok(html.includes('Bot WhatsApp Melayu'));
-  assert.ok(html.includes('Jana Semula QR Code'));
+  assert.ok(html.includes('Bot Melayu'));
+  assert.ok(html.includes('Jana Semula Kod QR'));
 
   const sessionsRes = await fetch(`http://127.0.0.1:${PORT}/api/sessions`);
   assert.equal(sessionsRes.status, 200);
